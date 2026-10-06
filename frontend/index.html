@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#121212">
+  <title>Raft</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="top-inner">
+      <h1>Raft</h1>
+      <p id="workbook-status" class="workbook-status" role="status"></p>
+    </div>
+  </header>
+
+  <main>
+    <div class="toolbar">
+      <h2 id="month-title"></h2>
+      <label for="month-select">Select Month</label>
+      <select id="month-select" disabled></select>
+      <button id="add-month" type="button" class="secondary" title="Add New Month"><span class="add-plus" aria-hidden="true">+</span><span class="add-text">Add New Month</span></button>
+    </div>
+
+    <p id="notice" class="notice" role="alert" hidden></p>
+
+    <p id="empty" class="empty" hidden>
+      The workbook has no monthly sheets yet. Use Add New Month, the + button, to create one.
+    </p>
+
+    <div id="month-view" hidden>
+      <div id="month-bar" class="month-bar">
+        <span id="bar-month" class="bar-month" aria-hidden="true"></span>
+        <nav id="section-nav" class="section-nav" aria-label="Sections on this page">
+          <a href="#today-strip" class="today-link">Today</a>
+          <a href="#section-tracker">Days</a>
+          <a href="#section-habits">Habits</a>
+          <a href="#section-calories">Nutrition</a>
+          <a href="#section-cardio">Training</a>
+          <a href="#section-weekly">Weekly</a>
+          <a href="#section-measurements">Body</a>
+        </nav>
+      </div>
+
+      <section id="today-strip" class="today-strip" aria-label="Today" hidden></section>
+
+      <section id="section-tracker" class="block" data-section="tracker" aria-labelledby="heading-tracker">
+        <h3 id="heading-tracker">Daily Tracker</h3>
+        <p class="desc">
+          What the workbook holds for each day. Use Edit to change a day; the
+          change is written to Fitness_Tracker.xlsx when you press Save. Days
+          in the future cannot be edited yet.
+        </p>
+        <p id="saved-note" class="saved-note" role="status" hidden></p>
+        <div class="table-scroll">
+          <table id="days-table" class="stack-rows">
+            <thead>
+              <tr id="days-head">
+                <th scope="col">Date</th>
+                <th scope="col">Exercise</th>
+                <th scope="col">Junk Food</th>
+                <th scope="col" class="num">Cardio (min:sec)</th>
+                <th scope="col" class="num">Calories (kcal)</th>
+                <th scope="col" class="num">Protein (g)</th>
+                <th scope="col" class="num">Weight Lifted (kg)</th>
+                <th scope="col" class="action">Edit</th>
+              </tr>
+            </thead>
+            <tbody id="days-body"></tbody>
+          </table>
+        </div>
+        <div id="issues" class="issues" hidden>
+          <h4>Cells that could not be read</h4>
+          <p id="issues-help"></p>
+          <ul id="issues-list"></ul>
+        </div>
+      </section>
+
+      <div id="analytics-body"></div>
+
+      <section id="section-sunday" class="block" data-section="sunday" aria-labelledby="heading-sunday">
+        <h3 id="heading-sunday">Sunday Measurements</h3>
+        <p class="desc">
+          One row for each Sunday in this month, as entered in the workbook. Use
+          Edit to change a Sunday's measurements; the change is written to
+          Fitness_Tracker.xlsx when you press Save. Sundays in the future
+          cannot be edited yet.
+        </p>
+        <p id="measure-saved-note" class="saved-note" role="status" hidden></p>
+        <div class="table-scroll">
+          <table id="measurements-table" class="stack-rows">
+            <thead>
+              <tr id="measurements-head">
+                <th scope="col">Sunday</th>
+                <th scope="col" class="num">Weight (kg)</th>
+                <th scope="col" class="num">Waist (cm)</th>
+                <th scope="col" class="num">Chest (cm)</th>
+                <th scope="col" class="num">Bicep (cm)</th>
+                <th scope="col" class="num">Thigh (cm)</th>
+                <th scope="col" class="num">Forearm (cm)</th>
+                <th scope="col" class="action">Edit</th>
+              </tr>
+            </thead>
+            <tbody id="measurements-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <dialog id="add-dialog" aria-labelledby="add-title">
+    <form id="add-form">
+      <h2 id="add-title">Add New Month</h2>
+      <div class="field">
+        <label for="new-month">Month</label>
+        <select id="new-month" required>
+          <option value="1">January</option>
+          <option value="2">February</option>
+          <option value="3">March</option>
+          <option value="4">April</option>
+          <option value="5">May</option>
+          <option value="6">June</option>
+          <option value="7">July</option>
+          <option value="8">August</option>
+          <option value="9">September</option>
+          <option value="10">October</option>
+          <option value="11">November</option>
+          <option value="12">December</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="new-year">Year</label>
+        <input id="new-year" type="number" inputmode="numeric" step="1" required>
+      </div>
+      <p id="add-error" class="notice" role="alert" hidden></p>
+      <div class="actions">
+        <button id="add-cancel" type="button" class="secondary">Cancel</button>
+        <button id="add-submit" type="submit">Create Month</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="edit-dialog" class="edit-dialog" aria-labelledby="edit-title" aria-describedby="edit-date">
+    <form id="edit-form" novalidate>
+      <h2 id="edit-title">Edit Progress</h2>
+      <p id="edit-date" class="edit-date"></p>
+      <div class="edit-fields">
+        <div class="field">
+          <label for="edit-exercise">Exercise</label>
+          <select id="edit-exercise" aria-describedby="edit-exercise-error"></select>
+          <p id="edit-exercise-error" class="field-error" hidden></p>
+        </div>
+        <div class="field">
+          <label for="edit-junk-food">Junk Food</label>
+          <select id="edit-junk-food" aria-describedby="edit-junk-food-error"></select>
+          <p id="edit-junk-food-error" class="field-error" hidden></p>
+        </div>
+        <div class="field">
+          <label for="edit-cardio">Cardio (min:sec)</label>
+          <input id="edit-cardio" type="text" inputmode="text" autocomplete="off" maxlength="6"
+                 placeholder="min:sec" aria-describedby="edit-cardio-error">
+          <p id="edit-cardio-error" class="field-error" hidden></p>
+        </div>
+        <div class="field">
+          <label for="edit-calories">Calories (kcal)</label>
+          <input id="edit-calories" type="text" inputmode="numeric" autocomplete="off" maxlength="5"
+                 aria-describedby="edit-calories-error">
+          <p id="edit-calories-error" class="field-error" hidden></p>
+        </div>
+        <div class="field">
+          <label for="edit-protein">Protein (g)</label>
+          <input id="edit-protein" type="text" inputmode="decimal" autocomplete="off" maxlength="6"
+                 aria-describedby="edit-protein-error">
+          <p id="edit-protein-error" class="field-error" hidden></p>
+        </div>
+        <div class="field">
+          <label for="edit-weight">Weight Lifted (kg)</label>
+          <input id="edit-weight" type="text" inputmode="decimal" autocomplete="off" maxlength="8"
+                 aria-describedby="edit-weight-error">
+          <p id="edit-weight-error" class="field-error" hidden></p>
+        </div>
+      </div>
+      <p class="edit-hint">Leave a field empty if there is nothing to record. Nothing is saved until you press Save.</p>
+      <p id="edit-error" class="notice" role="alert" hidden></p>
+      <div class="actions">
+        <button id="edit-cancel" type="button" class="secondary">Cancel</button>
+        <button id="edit-save" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="measure-dialog" class="edit-dialog" aria-labelledby="measure-title" aria-describedby="measure-date">
+    <form id="measure-form" novalidate>
+      <h2 id="measure-title">Edit Measurements</h2>
+      <p id="measure-date" class="edit-date"></p>
+      <div class="edit-fields">
+        <div class="field">
+          <label for="measure-weight">Weight (kg)</label>
+          <input id="measure-weight" type="text" inputmode="decimal" autocomplete="off" maxlength="5"
+                 aria-describedby="measure-weight-error">
+          <p id="measure-weight-error" class="field-error" hidden></p>
+        </div>
+        <div class="field">
+          <label for="measure-waist">Waist (cm)</label>
+          <input id="measure-waist" type="text" inputmode="decimal" autocomplete="off" maxlength="5"
+                 aria-describedby="measure-waist-error">
+          <p id="measure-waist-error" class="field-error" hidden></p>
+        </div>
+        <div class="field">
+          <label for="measure-chest">Chest (cm)</label>
+          <input id="measure-chest" type="text" inputmode="decimal" autocomplete="off" maxlength="5"
+                 aria-describedby="measure-chest-error">
+          <p id="measure-chest-error" class="field-error" hidden></p>
+        </div>
+        <div class="field">
+          <label for="measure-bicep">Bicep (cm)</label>
+          <input id="measure-bicep" type="text" inputmode="decimal" autocomplete="off" maxlength="5"
+                 aria-describedby="measure-bicep-error">
+          <p id="measure-bicep-error" class="field-error" hidden></p>
+        </div>
+        <div class="field">
+          <label for="measure-thigh">Thigh (cm)</label>
+          <input id="measure-thigh" type="text" inputmode="decimal" autocomplete="off" maxlength="5"
+                 aria-describedby="measure-thigh-error">
+          <p id="measure-thigh-error" class="field-error" hidden></p>
+        </div>
+        <div class="field">
+          <label for="measure-forearm">Forearm (cm)</label>
+          <input id="measure-forearm" type="text" inputmode="decimal" autocomplete="off" maxlength="5"
+                 aria-describedby="measure-forearm-error">
+          <p id="measure-forearm-error" class="field-error" hidden></p>
+        </div>
+      </div>
+      <p class="edit-hint">Leave a field empty if it was not measured. Nothing is saved until you press Save.</p>
+      <p id="measure-error" class="notice" role="alert" hidden></p>
+      <div class="actions">
+        <button id="measure-cancel" type="button" class="secondary">Cancel</button>
+        <button id="measure-save" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="format.js"></script>
+  <script src="analytics.js"></script>
+  <script src="app.js"></script>
+  <script src="editor.js"></script>
+</body>
+</html>

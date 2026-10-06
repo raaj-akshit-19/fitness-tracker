@@ -1,0 +1,44 @@
+# Personal data: the working workbook in the project folder, and anything kept
+# in personal/. The clean Fitness_Tracker_Template.xlsx is what gets committed.
+/Fitness_Tracker.xlsx
+/personal/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# PyInstaller working folders (the recipe windows_build/fitness_tracker.spec is kept)
+/build/
+/dist/
+
+# Excel lock files and the app's own temporary save files
+~$*
+.tracker-*.xlsx
+
+# Test and scratch leftovers
+*.log
+*.tmp
+*.bak
+/tmp/
+/scratch/
+/test-output/
+*_test_copy.xlsx
+*.test.xlsx
+
+# Local settings and tool folders
+.env
+.env.*
+*.local
+.vscode/
+.idea/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Node (only used to run the frontend tests; no packages are needed)
+node_modules/

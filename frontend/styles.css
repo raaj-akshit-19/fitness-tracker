@@ -1,0 +1,2593 @@
+/* Raft. One stylesheet, no build step, nothing loaded from elsewhere.
+
+   Written for a phone first. Everything above the "wider screens" part is the
+   phone layout; the blocks after it give the same page more room, a step at a
+   time, up to a desk.
+
+   Order: tokens, base, header, controls, bar of links, today, sections, days,
+   state marks, cards and figures, daily grid, weekly, measurements, charts,
+   dialogs, editors, motion, wider screens, reduced motion.
+
+   The look: a near-black page with a faint warm glow behind it, dark
+   surfaces a step lighter, one neon orange accent used sparingly, soft
+   corners, and a little glass on the few things that sit over something
+   else. */
+
+:root {
+  color-scheme: dark;
+
+  /* The palette. Every colour on the page is one of these or made from them. */
+  --background: #121212;
+  --surface: #1B1B1B;
+  --accent-neon: #FF5F1F;
+  --accent-muted: #B34215;
+  --text-primary: #F5F5F7;
+  --text-secondary: #9E9E9E;
+
+  /* Surfaces, from the page up. Depth comes from these steps: the page, a
+     panel on it, a raised panel, and tiles set into a panel. */
+  --page: var(--background);
+  --raised: #232323;
+  --head: #202020;
+  --inset: rgba(255, 255, 255, 0.05);
+  --inset-strong: rgba(255, 255, 255, 0.09);
+  --line: #2a2a2a;
+  --line-strong: #3a3a3a;
+
+  --text: var(--text-primary);
+  --muted: var(--text-secondary);
+  --faint: var(--text-secondary);
+
+  /* Glass, for what sits over something else: the bar of links, the panel for
+     today, the cards, a dialog. A see-through fill as light as the surface it
+     stands for, a hairline of light on its edge, and a blur of what is behind. */
+  --glass: rgba(34, 34, 34, 0.72);
+  --glass-card: rgba(30, 30, 30, 0.7);
+  --glass-bar: rgba(18, 18, 18, 0.74);
+  --glass-line: rgba(255, 255, 255, 0.1);
+  --sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 62%);
+  --frost: blur(16px) saturate(140%);
+
+  /* The glow behind the page: the accent at one top corner, its muted shade
+     at the opposite foot. Faint enough to be felt rather than seen. */
+  --glow-warm: rgba(255, 95, 31, 0.06);
+  --glow-ember: rgba(179, 66, 21, 0.06);
+
+  /* One accent, kept for what matters: the main action, where you are, today,
+     and what is done. */
+  --accent: var(--accent-neon);
+  --accent-strong: #ff7a42;
+  --accent-ink: #140802;
+  --accent-soft: rgba(255, 95, 31, 0.12);
+  --flash: rgba(255, 95, 31, 0.26);
+
+  --danger: #ffb4b4;
+  --danger-line: #b4545a;
+  --danger-soft: rgba(255, 110, 110, 0.1);
+
+  /* Habit states. Each also has its own shape, so none depends on its colour. */
+  --done: var(--accent);
+  --half: var(--accent-muted);
+  --missed: #4a4a4a;
+  --idle: #5a5a5a;
+
+  /* Charts */
+  --series: #ababab;
+  --grid: #262626;
+
+  /* Corners, all soft and none a pill: panels, the tiles inside them,
+     controls, a dialog, marks. */
+  --r-panel: 20px;
+  --r-inner: 16px;
+  --r-control: 12px;
+  --r-overlay: 24px;
+  --r-mark: 4px;
+
+  /* Depth. Two things float, the panel for today and a dialog; a card only
+     lifts a little. Each has a hairline of light along its top edge. The main
+     action alone has a faint orange glow. */
+  --shadow-raised: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 18px 36px -20px rgba(0, 0, 0, 0.85);
+  --shadow-overlay: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 -8px 48px -12px rgba(0, 0, 0, 0.85);
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 24px -18px rgba(0, 0, 0, 0.7);
+  --shadow-glow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 0 20px rgba(255, 95, 31, 0.12);
+
+  --fast: 150ms;
+  --base: 220ms;
+  --slow: 300ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --bar: 46px;
+  --gutter: 16px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--page);
+}
+
+body {
+  margin: 0;
+  background: transparent;
+  color: var(--text);
+  font: 15px/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* The glow sits behind everything and stays put while the page scrolls. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(70% 46% at 8% 0%, var(--glow-warm), transparent 72%),
+    radial-gradient(70% 50% at 100% 100%, var(--glow-ember), transparent 74%);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* The name of the app is a small line; the month is the heading. On a phone
+   the name sits in the middle of the header. */
+h1 {
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  text-align: center;
+}
+
+h2 {
+  font-size: 28px;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+h4 {
+  margin: 20px 0 8px;
+  font-size: 14px;
+}
+
+.sub {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+/* The unit after a figure: smaller and quieter than the figure itself. */
+.unit {
+  color: var(--muted);
+  font-size: 0.68em;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+/* ---------------------------------------------------------------- header */
+
+.top-inner,
+main {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+.top-inner {
+  padding-top: 14px;
+}
+
+.workbook-status {
+  min-height: 19px;
+  margin: 1px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+main {
+  padding-bottom: 72px;
+}
+
+/* On a phone the month is chosen from the heading itself: the selector is set
+   as large as a heading, and Add New Month is a small button beside it. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.toolbar h2,
+.toolbar label,
+.add-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- controls */
+
+select,
+input,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* Tall enough for a thumb, and set at a size a phone does not zoom in on. */
+select,
+input {
+  height: 46px;
+  padding: 0 12px;
+  font-size: 16px;
+  background: var(--inset);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-control);
+}
+
+select option {
+  background: var(--raised);
+  color: var(--text);
+}
+
+select:hover,
+input:hover {
+  border-color: var(--accent-muted);
+}
+
+#month-select {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 50px;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  background: var(--surface);
+}
+
+/* Every dropdown (the month, the month to add, Exercise and Junk Food) draws
+   its own list where the browser allows it, so the open list is dark like the
+   page instead of in the system's colours. Each is still the page's own
+   select: its values, the form, the keyboard, touch, Escape and a click
+   outside all work as they did. One set of rules serves all of them. */
+select,
+select::picker(select) {
+  appearance: base-select;
+}
+
+select:hover:not(:disabled) {
+  background-color: var(--inset-strong);
+}
+
+#month-select:hover:not(:disabled) {
+  background-color: var(--raised);
+}
+
+select:active,
+select:open {
+  border-color: var(--accent-muted);
+}
+
+/* Drawn this way, a closed dropdown keeps the look it had: its value centred
+   on the line, set in from the edge as before, and a small chevron. */
+@supports (appearance: base-select) {
+  select {
+    align-items: center;
+    padding-left: 16px;
+  }
+}
+
+select::picker-icon {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin: -4px 5px 0 auto;
+  color: var(--muted);
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  rotate: 45deg;
+}
+
+/* The open list, attached to its dropdown; it opens upward when there is no
+   room below. A long list (twelve months) scrolls within itself instead of
+   running off the screen. */
+select::picker(select) {
+  max-block-size: min(332px, 60dvh);
+  overflow-y: auto;
+  margin: 6px 0;
+  padding: 6px;
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--r-control);
+  box-shadow: var(--shadow-raised);
+}
+
+/* The month's list is set like the others, not as large as the heading. */
+#month-select::picker(select) {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+@supports (appearance: base-select) {
+  select option {
+    min-height: 44px;
+    padding: 10px 12px;
+    color: var(--text);
+    background: transparent;
+    border-radius: 8px;
+  }
+}
+
+select option:hover,
+select option:active {
+  background: var(--inset-strong);
+}
+
+select option:focus-visible {
+  outline: none;
+  background: var(--inset-strong);
+  box-shadow: inset 0 0 0 1px var(--accent-muted);
+}
+
+select option:checked {
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+select option::checkmark {
+  color: var(--accent);
+}
+
+/* While a list is open, a tap or click outside it only closes it, as with
+   the system's own list: it does not also press what is underneath, in the
+   page or in an editor. */
+body:has(select:open) {
+  pointer-events: none;
+}
+
+select:open {
+  pointer-events: auto;
+}
+
+button {
+  height: 46px;
+  padding: 0 18px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-control);
+  box-shadow: var(--shadow-glow);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+button.secondary {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font-weight: 500;
+  border-color: var(--line-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+button.secondary:hover:not(:disabled) {
+  background: var(--inset-strong);
+  border-color: var(--accent-muted);
+}
+
+button.small {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 13.5px;
+}
+
+#add-month {
+  flex: none;
+  width: 50px;
+  height: 50px;
+  padding: 0;
+  background: var(--surface);
+}
+
+.add-plus {
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+button:disabled,
+select:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+select:focus-visible,
+input:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+/* A dropdown's ring is the accent, as is its chosen value in the open list. */
+select:focus-visible {
+  outline-color: var(--accent);
+}
+
+.notice {
+  margin: 14px 0 0;
+  padding: 10px 14px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 1px solid var(--danger-line);
+  border-left-width: 4px;
+  border-radius: var(--r-control);
+  overflow-wrap: anywhere;
+}
+
+.empty {
+  margin-top: 18px;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- bar of links */
+
+/* The areas of the page, in one row that is swiped sideways on a phone. The
+   bar stays at the top of the window while the page scrolls, and then also
+   names the month, since its heading is out of sight. */
+.month-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  margin: 10px calc(var(--gutter) * -1) 0;
+  padding: 0 var(--gutter);
+  background: transparent;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Once it is held at the top, the page passes under it. */
+.month-bar.stuck {
+  background: var(--page);
+  border-bottom-color: var(--line-strong);
+}
+
+/* Where the browser can blur what is behind it, the held bar is glass. */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .month-bar.stuck {
+    background: var(--glass-bar);
+    -webkit-backdrop-filter: var(--frost);
+    backdrop-filter: var(--frost);
+  }
+}
+
+.bar-month {
+  flex: none;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.month-bar.stuck .bar-month {
+  max-width: 128px;
+  margin-right: 10px;
+  padding-right: 10px;
+  opacity: 1;
+  border-right: 1px solid var(--line-strong);
+}
+
+.section-nav {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  margin-left: -10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  font-size: 14px;
+}
+
+.section-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.section-nav a {
+  margin-bottom: -1px;
+  padding: 13px 10px 11px;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+}
+
+.section-nav a:hover {
+  color: var(--text);
+}
+
+/* The area now at the top of the window: brighter text and a line in the accent. */
+.section-nav a[aria-current="true"] {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
+/* Today is offered only in the month that holds today. */
+.section-nav[data-today="no"] .today-link {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- today */
+
+/* Today's entries, first on the page and the one raised panel on it: the
+   exercise status largest, then junk food, then the day's figures as tiles set
+   into the panel, and the way to change them. */
+.today-strip {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--sheen), var(--glass);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--r-panel);
+  box-shadow: var(--shadow-raised);
+  -webkit-backdrop-filter: var(--frost);
+  backdrop-filter: var(--frost);
+  scroll-margin-top: calc(var(--bar) + 12px);
+}
+
+.today-strip[hidden] {
+  display: none;
+}
+
+.today-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.today-kicker {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.today-date {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.today-items {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.today-item {
+  min-width: 0;
+}
+
+.today-items dt {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.today-items dd {
+  margin: 1px 0 0;
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.today-items dd.blank {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.65;
+}
+
+.today-items dd.unreadable {
+  color: var(--danger);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.today-items .mark {
+  margin-right: 8px;
+}
+
+/* The two statuses sit on the panel itself, each on its own line. Exercise is
+   the day's main state and is set largest. */
+.today-item[data-field="exercise"],
+.today-item[data-field="junk_food"] {
+  grid-column: 1 / -1;
+}
+
+.today-item[data-field="exercise"] dd,
+.today-item[data-field="exercise"] dd.blank {
+  font-size: 24px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.today-item[data-field="exercise"] .mark {
+  margin: 0 11px 0 2px;
+  vertical-align: 0;
+  transform: scale(1.25);
+}
+
+.today-item[data-field="junk_food"] dd {
+  font-size: 17px;
+}
+
+/* The figures are tiles set into the panel. */
+.today-item[data-field="cardio"],
+.today-item[data-field="calories_kcal"],
+.today-item[data-field="protein_g"],
+.today-item[data-field="weight_lifted_kg"] {
+  padding: 10px 12px;
+  background: var(--inset);
+  border-radius: var(--r-inner);
+}
+
+.today-strip button {
+  width: 100%;
+  margin-top: 14px;
+}
+
+/* ---------------------------------------------------------------- sections */
+
+/* Sections are set apart by space and their headings, not by boxes. Sections
+   that belong to one area carry its name above their own, and sit closer. */
+.block {
+  margin-top: 40px;
+  scroll-margin-top: calc(var(--bar) + 12px);
+}
+
+.block[data-section="calories"]::before,
+.block[data-section="protein"]::before,
+.block[data-section="cardio"]::before,
+.block[data-section="weight"]::before,
+.block[data-section="measurements"]::before,
+.block[data-section="sunday"]::before {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.block[data-section="calories"]::before,
+.block[data-section="protein"]::before {
+  content: "Nutrition";
+}
+
+.block[data-section="cardio"]::before,
+.block[data-section="weight"]::before {
+  content: "Training";
+}
+
+.block[data-section="measurements"]::before,
+.block[data-section="sunday"]::before {
+  content: "Body";
+}
+
+.block[data-section="daily"],
+.block[data-section="protein"],
+.block[data-section="weight"],
+.block[data-section="sunday"] {
+  margin-top: 32px;
+}
+
+.desc {
+  max-width: 760px;
+  margin: 4px 0 14px;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.legend {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.legend li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.legend .mark {
+  margin-top: 2px;
+}
+
+/* A plain line of information: not a card, only a rule down its left side. */
+.saved-note {
+  max-width: 760px;
+  margin: 0 0 14px;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--line-strong);
+  font-size: 13.5px;
+}
+
+.saved-note {
+  border-left-color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- days */
+
+.table-scroll {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-inner);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+th,
+td {
+  padding: 9px 12px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+
+thead th {
+  background: var(--head);
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+tbody tr:last-child td,
+tbody tr:last-child th {
+  border-bottom: 0;
+}
+
+th.num,
+td.num {
+  text-align: right;
+}
+
+th.action,
+td.action {
+  text-align: right;
+}
+
+td.strong {
+  font-weight: 600;
+}
+
+td.blank {
+  color: var(--muted);
+}
+
+td.unreadable {
+  color: var(--danger);
+}
+
+/* A status: its mark, then the word the workbook holds. */
+td.status {
+  font-weight: 600;
+}
+
+td.status.blank {
+  font-weight: 400;
+}
+
+td.status .mark {
+  margin-right: 8px;
+}
+
+/* The days and the Sundays are worked in, so on a phone each one is a block
+   in a feed, not a row of a table: the date and Edit on its first line, then
+   every value under its own label. Nothing is cut off and nothing has to be
+   scrolled sideways. The header row is kept for screen readers. */
+.stack-rows,
+.stack-rows tbody {
+  display: block;
+}
+
+.stack-rows thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.stack-rows tbody tr {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  align-items: end;
+  padding: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.stack-rows tbody tr:first-child {
+  border-top: 0;
+}
+
+.stack-rows td {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  white-space: normal;
+  border: 0;
+  overflow-wrap: anywhere;
+}
+
+.stack-rows td[data-label]::before {
+  content: attr(data-label);
+  display: block;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+
+.stack-rows td:first-child {
+  grid-column: 1 / -1;
+  align-self: center;
+  font-size: 15.5px;
+  font-weight: 600;
+}
+
+.stack-rows td.action {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  align-self: center;
+}
+
+.stack-rows td:first-child {
+  grid-column: 1;
+}
+
+/* The days sit in two columns so that the ones still to come can share a line. */
+#days-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#days-body tr {
+  grid-column: 1 / -1;
+}
+
+/* A new week starts on Monday. */
+#days-body tr.week-start:not(:first-child) {
+  border-top: 2px solid var(--line-strong);
+}
+
+#days-body tr.today {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* A day or a Sunday still to come with nothing in it is only its date. */
+#days-body tr.upcoming,
+#measurements-body tr.upcoming {
+  display: block;
+  padding: 10px 14px;
+}
+
+#days-body tr.upcoming,
+#days-body tr.upcoming.week-start:not(:first-child) {
+  grid-column: auto;
+  border-top: 1px solid var(--line);
+}
+
+/* Two of them at the very top share the first line, which has no rule above it. */
+#days-body tr.upcoming:first-child,
+#days-body tr.upcoming:first-child + tr.upcoming {
+  border-top: 0;
+}
+
+#days-body tr.upcoming td[data-label],
+#days-body tr.upcoming td.action,
+#measurements-body tr.upcoming td[data-label],
+#measurements-body tr.upcoming td.action {
+  display: none;
+}
+
+#days-body tr.upcoming td:first-child,
+#measurements-body tr.upcoming td:first-child {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.tag {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-mark);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+.issues {
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-line);
+  border-left-width: 4px;
+  border-radius: var(--r-control);
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.issues h4 {
+  margin-top: 0;
+}
+
+.issues p {
+  margin: 0 0 6px;
+}
+
+.issues ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+/* ---------------------------------------------------------------- state marks */
+
+/* The mark of a status. Done is a filled box with a tick, half a half-filled
+   box, a rest day a box with a dash, missed a grey box with a cross, a past
+   blank a box with a dot, and pending an empty box. */
+.mark {
+  display: inline-block;
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  vertical-align: -3px;
+  background: transparent;
+  border: 1.5px solid var(--idle);
+  border-radius: var(--r-mark);
+}
+
+.mark.completed {
+  background: var(--done);
+  border-color: var(--done);
+}
+
+.mark.completed::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 0.5px;
+  width: 4px;
+  height: 9px;
+  border: solid var(--accent-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.mark.missed {
+  background: var(--missed);
+  border-color: var(--missed);
+}
+
+.mark.missed::before,
+.mark.missed::after {
+  content: "";
+  position: absolute;
+  left: 5.5px;
+  top: 1.5px;
+  width: 2px;
+  height: 10px;
+  background: var(--text);
+  transform: rotate(45deg);
+}
+
+.mark.missed::after {
+  transform: rotate(-45deg);
+}
+
+.mark.partial {
+  border-color: var(--done);
+}
+
+.mark.partial::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 50%;
+  background: var(--done);
+}
+
+.mark.rest {
+  border-color: var(--muted);
+}
+
+.mark.rest::after {
+  content: "";
+  position: absolute;
+  left: 2.5px;
+  top: 5.5px;
+  width: 8px;
+  height: 2px;
+  background: var(--muted);
+}
+
+.mark.unentered {
+  border-color: var(--missed);
+}
+
+.mark.unentered::after {
+  content: "";
+  position: absolute;
+  left: 4.5px;
+  top: 4.5px;
+  width: 4px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--muted);
+}
+
+/* ---------------------------------------------------------------- cards and figures */
+
+/* Cards are kept for the two habits and the six measurements, which each hold
+   a group of figures. Everything else sits on the page itself. */
+.cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.card,
+.today-panel {
+  background: var(--sheen), var(--glass-card);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--r-panel);
+  box-shadow: var(--shadow-card);
+}
+
+.card {
+  min-width: 0;
+  padding: 16px;
+}
+
+.card h4 {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+/* The one large figure of a card, with what it is beside it. */
+.figure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 10px;
+  margin-bottom: 12px;
+}
+
+.figure-value {
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.figure-value .unit {
+  font-size: 0.55em;
+}
+
+.figure-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* The bar of a habit, split by status. The counts under it say the same in
+   words; here a solid piece is counted and an outlined piece is not. */
+.stack {
+  display: flex;
+  gap: 3px;
+  height: 12px;
+}
+
+.seg {
+  min-width: 4px;
+  border: 1px solid var(--idle);
+  border-radius: 3px;
+}
+
+.seg.completed {
+  background: var(--done);
+  border-color: var(--done);
+}
+
+.seg.partial {
+  background: var(--half);
+  border-color: var(--done);
+}
+
+.seg.missed {
+  background: var(--missed);
+  border-color: var(--missed);
+}
+
+.seg.rest {
+  border-style: dashed;
+  border-color: var(--muted);
+}
+
+.seg.unentered {
+  border-color: var(--missed);
+  border-width: 2px;
+}
+
+/* The count of each status, two to a line on the narrowest phones. */
+.counts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 10px;
+  margin-top: 16px;
+}
+
+.count {
+  min-width: 0;
+}
+
+.card-note {
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+
+.count-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.count-label .mark {
+  vertical-align: baseline;
+}
+
+.count-value {
+  margin-top: 2px;
+  font-size: 19px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.count .sub {
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+/* The two streaks, side by side, as tiles set into the card. They sit at the
+   foot of the card, so they line up across the two habits. */
+.habit {
+  display: flex;
+  flex-direction: column;
+}
+
+.streaks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: auto 0 0;
+  padding-top: 16px;
+}
+
+.row {
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--inset);
+  border-radius: var(--r-inner);
+}
+
+.row dt {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.row dd {
+  margin: 2px 0 0;
+  font-size: 21px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A section's figures. The first is the one that matters and is set large;
+   the others support it, two to a line, parted by hairlines. No boxes. The
+   label, value and note of the figures on one line share their rows, so the
+   values line up even when a label takes two lines. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+}
+
+.tile {
+  display: grid;
+  grid-template-rows: subgrid;
+  grid-row: span 3;
+  align-content: start;
+  min-width: 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.tile-label {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.tile-value {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.tile-value .unit {
+  font-size: 0.72em;
+}
+
+.tile-note {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.tiles > .tile:first-child {
+  grid-column: 1 / -1;
+  padding: 0 0 14px;
+  border-top: 0;
+}
+
+.tiles > .tile:first-child .tile-label {
+  font-size: 13px;
+}
+
+.tiles > .tile:first-child .tile-value {
+  font-size: 38px;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.tiles > .tile:first-child .tile-value .unit {
+  font-size: 0.5em;
+}
+
+.tiles > .tile:first-child .tile-note {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* An odd supporting figure out takes the whole last line. */
+.tiles > .tile:last-child:nth-child(even) {
+  grid-column: 1 / -1;
+}
+
+/* Today's two habits, spelled out. */
+.today-panel {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-left: 4px solid var(--accent);
+  border-radius: var(--r-inner);
+}
+
+.today-panel h4 {
+  margin: 0 0 6px;
+}
+
+.today-panel ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.today-panel li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 3px 0;
+}
+
+.today-panel .value {
+  font-weight: 600;
+}
+
+/* Nothing recorded: an empty plot with its reason in the middle, where the
+   chart would be. No picture and no made-up figures. */
+.empty-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 112px;
+  margin-bottom: 14px;
+  padding: 18px;
+  text-align: center;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-inner);
+}
+
+.tiles + .empty-box {
+  margin-top: 6px;
+}
+
+.empty-box p {
+  margin: 0;
+}
+
+.empty-title {
+  font-weight: 600;
+}
+
+.empty-box .sub {
+  margin-top: 3px;
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------- daily grid */
+
+table.grid {
+  width: 100%;
+}
+
+/* The day columns share the width between them, however wide the page is. */
+.grid th,
+.grid td {
+  padding: 4px 0;
+  min-width: 25px;
+  text-align: center;
+  font-size: 12px;
+  border-bottom: 0;
+}
+
+.grid thead th {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.grid .mark {
+  vertical-align: middle;
+}
+
+/* Row labels stay in view while the days scroll sideways. */
+.grid th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  width: 1%;
+  padding: 4px 12px;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  text-align: left;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.grid thead th:first-child,
+.grid .weekdays th:first-child {
+  background: var(--head);
+}
+
+.grid tbody th {
+  font-weight: 400;
+}
+
+.grid .weekdays td,
+.grid .weekdays th {
+  padding-top: 0;
+  background: var(--head);
+  color: var(--muted);
+  font-weight: 400;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.grid tbody tr:first-child td,
+.grid tbody tr:first-child th {
+  padding-top: 8px;
+}
+
+.grid tbody tr:last-child td,
+.grid tbody tr:last-child th {
+  padding-bottom: 8px;
+}
+
+.grid .week-start {
+  border-left: 1px solid var(--line-strong);
+}
+
+/* Today's column: tinted and outlined on both sides. */
+.grid .today {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent), inset -2px 0 0 var(--accent);
+}
+
+.grid thead th.today {
+  color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent), inset -2px 0 0 var(--accent), inset 0 2px 0 var(--accent);
+}
+
+/* In the month that holds today, the days already past are quieter than
+   today and the days to come. Only their look changes: they read as before
+   and stay exactly as they were in every other way. */
+.grid thead th.past {
+  color: var(--muted);
+}
+
+.grid td.past .mark {
+  opacity: 0.7;
+}
+
+/* ---------------------------------------------------------------- weekly and totals */
+
+table.weekly {
+  min-width: 940px;
+}
+
+.weekly th,
+.weekly td {
+  padding: 8px 8px;
+}
+
+.weekly th:first-child {
+  padding-left: 12px;
+}
+
+.weekly th[scope="row"],
+.totals th[scope="row"] {
+  font-weight: 600;
+}
+
+.weekly thead th.num {
+  font-weight: 600;
+}
+
+.weekly .group {
+  border-left: 1px solid var(--line-strong);
+}
+
+.weekly thead tr:first-child th.group {
+  color: var(--text);
+  text-align: left;
+  font-size: 14px;
+}
+
+table.totals {
+  min-width: 460px;
+}
+
+/* The weekly tables are wider than a phone and scroll in their own box. The
+   week they are about stays in view at the left while they do. */
+.weekly th[scope="row"],
+.totals th[scope="row"],
+.weekly thead tr:first-child th:first-child,
+.totals thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  box-shadow: inset -1px 0 0 var(--line-strong);
+}
+
+.weekly th[scope="row"],
+.totals th[scope="row"] {
+  background: var(--surface);
+}
+
+.weekly th[scope="row"] {
+  min-width: 88px;
+  max-width: 96px;
+  white-space: normal;
+}
+
+/* ---------------------------------------------------------------- measurement cards */
+
+/* Six measurements, two to a line on a phone: the value, how it changed, and
+   a small line through its Sundays. */
+.cards.three {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.measure {
+  padding: 12px;
+}
+
+.measure .figure {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.measure .figure-value {
+  display: block;
+  font-size: 25px;
+}
+
+.measure .figure-label {
+  font-size: 11.5px;
+}
+
+/* Previous, change and change in percent: a line each, the name at the left
+   and the value at the right. */
+.trio {
+  display: grid;
+  gap: 5px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.trio-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 8px;
+  min-width: 0;
+}
+
+.trio-label {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.trio-value {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.trio-cell .sub {
+  flex-basis: 100%;
+  font-size: 11.5px;
+  text-align: right;
+}
+
+.measure-note {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+/* ---------------------------------------------------------------- charts */
+
+.chart-scroll {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-inner);
+}
+
+/* A chart drawn for a wide window keeps a readable size, and scrolls in its
+   box when the window is narrower than that. */
+.chart {
+  display: block;
+  width: 100%;
+  min-width: 660px;
+  height: auto;
+}
+
+/* A chart drawn for a phone fits the phone. */
+.chart.compact {
+  min-width: 0;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.chart.compact .tick,
+.chart.compact .axis-title {
+  font-size: 14px;
+}
+
+.chart.compact .point-label {
+  font-size: 14.5px;
+}
+
+.chart.small {
+  min-width: 0;
+  margin-top: 10px;
+}
+
+.chart.small.compact {
+  max-width: 220px;
+  margin: 10px 0 0;
+}
+
+.chart .gridline {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+
+.chart .axis {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.chart .tick,
+.chart .axis-title {
+  fill: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart .axis-title {
+  font-weight: 600;
+}
+
+.chart .bar {
+  fill: var(--series);
+}
+
+.chart .line {
+  stroke: var(--series);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.chart .dot {
+  fill: var(--series);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.chart .point-label {
+  fill: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.chart .hit {
+  fill: transparent;
+  outline: none;
+}
+
+.chart .hit:hover {
+  fill: rgba(255, 255, 255, 0.08);
+}
+
+.chart .hit:focus-visible {
+  fill: rgba(255, 255, 255, 0.08);
+  stroke: var(--text);
+  stroke-width: 2;
+}
+
+.tip {
+  position: fixed;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 9px;
+  background: var(--text);
+  color: var(--page);
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.tip[hidden] {
+  display: none;
+}
+
+.tip span {
+  opacity: 0.8;
+}
+
+/* ---------------------------------------------------------------- dialogs */
+
+/* On a phone a dialog is a sheet at the bottom edge, where a thumb reaches it.
+   It never grows taller than the window: its fields scroll, and Cancel and
+   Save stay at its foot. */
+dialog {
+  width: 100%;
+  max-width: 100%;
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  margin: auto 0 0;
+  padding: 0;
+  overflow-y: auto;
+  color: var(--text);
+  background: var(--sheen), var(--raised);
+  border: 0;
+  border-top: 1px solid var(--glass-line);
+  border-radius: var(--r-overlay) var(--r-overlay) 0 0;
+  box-shadow: var(--shadow-overlay);
+}
+
+/* The page behind a dialog is dimmed and out of focus. */
+dialog::backdrop {
+  background: rgba(8, 8, 8, 0.62);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+dialog form {
+  padding: 20px var(--gutter) 0;
+}
+
+dialog h2 {
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.field label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#add-form .field:first-of-type {
+  margin-top: 16px;
+}
+
+dialog .notice {
+  margin: 0 0 14px;
+}
+
+.actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+  margin: 0 calc(var(--gutter) * -1);
+  padding: 12px var(--gutter) 16px;
+  background: var(--raised);
+}
+
+.actions button {
+  flex: 1 1 0;
+}
+
+/* ---------------------------------------------------------------- editors */
+
+.edit-date {
+  margin: 2px 0 16px;
+  color: var(--muted);
+}
+
+/* One field to a line on a phone. */
+.edit-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0 14px;
+}
+
+.edit-fields select,
+.edit-fields input {
+  width: 100%;
+}
+
+.edit-fields [aria-invalid="true"] {
+  border-color: var(--danger);
+  border-width: 2px;
+}
+
+.field-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12.5px;
+}
+
+.edit-hint {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* ---------------------------------------------------------------- motion */
+
+/* Motion is short and is kept for things the user did: opening a month,
+   opening or closing an editor, pressing a button. A refresh in the
+   background draws nothing in; a figure it changed is tinted once. */
+
+button,
+select,
+input,
+.section-nav a {
+  transition: background-color var(--fast) ease, border-color var(--fast) ease, color var(--fast) ease;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.bar-month {
+  transition: max-width var(--base) var(--ease), opacity var(--base) ease;
+}
+
+/* A month being fetched after the user asked for it. Only a slow load dims. */
+#month-view {
+  transition: opacity var(--fast) ease;
+}
+
+#month-view[aria-busy="true"] {
+  opacity: 0.55;
+  transition: opacity var(--base) ease 180ms;
+}
+
+/* A month arriving on screen. The class is given to the sections of that one
+   load, so a later refresh, which builds new sections without it, is still. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes rise-again {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.reveal {
+  animation: rise 260ms var(--ease) backwards;
+}
+
+/* The parts that stay on the page between months take turns with two names
+   for the same movement, which is what makes it play for each new month. */
+[data-enter="a"] {
+  animation: rise 260ms var(--ease) backwards;
+}
+
+[data-enter="b"] {
+  animation: rise-again 260ms var(--ease) backwards;
+}
+
+#section-tracker[data-enter],
+#analytics-body .reveal:nth-child(1) {
+  animation-delay: 40ms;
+}
+
+#analytics-body .reveal:nth-child(2) {
+  animation-delay: 80ms;
+}
+
+#analytics-body .reveal:nth-child(n + 3),
+#section-sunday[data-enter] {
+  animation-delay: 120ms;
+}
+
+/* Bars and status pieces draw themselves once, with their section. */
+@keyframes grow-up {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes grow-across {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+}
+
+.reveal .chart .bar {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: grow-up 300ms var(--ease) 160ms backwards;
+}
+
+.reveal .stack .seg {
+  transform-origin: 0 50%;
+  animation: grow-across 300ms var(--ease) 160ms backwards;
+}
+
+.reveal .chart .line,
+.reveal .chart .dot,
+.reveal .chart .point-label {
+  animation: appear 300ms ease 200ms backwards;
+}
+
+/* A figure or a day that a save or a refresh changed. */
+@keyframes tint {
+  from {
+    background-color: var(--flash);
+  }
+}
+
+.changed,
+tr.changed td {
+  animation: tint 400ms ease-out;
+}
+
+.value.changed {
+  border-radius: 3px;
+}
+
+/* Messages arrive, they do not pop. */
+.saved-note:not([hidden]),
+.notice:not([hidden]) {
+  animation: rise 220ms var(--ease) backwards;
+}
+
+/* Dialogs fade and settle into place, and leave the same way: on a phone the
+   sheet comes up from the bottom edge. A browser that cannot do this shows
+   and hides them at once, which is fine. */
+dialog {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 160ms ease, transform 160ms var(--ease), overlay 160ms allow-discrete,
+    display 160ms allow-discrete;
+}
+
+dialog[open] {
+  opacity: 1;
+  transform: none;
+}
+
+dialog:not([open]) {
+  pointer-events: none;
+}
+
+dialog::backdrop {
+  opacity: 0;
+  transition: opacity 160ms ease, overlay 160ms allow-discrete, display 160ms allow-discrete;
+}
+
+dialog[open]::backdrop {
+  opacity: 1;
+}
+
+@starting-style {
+  dialog[open] {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+
+  dialog[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html,
+  .section-nav {
+    scroll-behavior: smooth;
+  }
+}
+
+/* ---------------------------------------------------------------- wider screens */
+
+/* From here on the phone layout is given more room, a step at a time. */
+
+@media (min-width: 360px) {
+  /* A day: the two statuses take half a line each, the four figures a quarter. */
+  .stack-rows tbody tr {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .stack-rows td.action {
+    grid-column: 4;
+  }
+
+  .stack-rows td:first-child {
+    grid-column: 1 / 4;
+  }
+
+  #days-table td:nth-child(2),
+  #days-table td:nth-child(3) {
+    grid-column: span 2;
+  }
+
+  /* A Sunday: six measurements, three to a line. */
+  #measurements-table.stack-rows tbody tr {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  #measurements-table.stack-rows td.action {
+    grid-column: 3;
+  }
+
+  #measurements-table.stack-rows td:first-child {
+    grid-column: 1 / 3;
+  }
+
+  .counts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ---------------------------------------------------------------- tablets */
+
+@media (min-width: 600px) {
+  /* From here up the name stays at the start of the header, as before. */
+  h1 {
+    text-align: left;
+  }
+
+  :root {
+    --gutter: 24px;
+  }
+
+  /* A dialog is a panel in the middle of the window, its fields two to a line. */
+  dialog {
+    width: 380px;
+    max-width: calc(100vw - 32px);
+    margin: auto;
+    border: 1px solid var(--glass-line);
+    border-radius: var(--r-overlay);
+    transform: translateY(10px) scale(0.985);
+  }
+
+  @starting-style {
+    dialog[open] {
+      transform: translateY(10px) scale(0.985);
+    }
+  }
+
+  .edit-dialog {
+    width: 500px;
+  }
+
+  .edit-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .actions {
+    justify-content: flex-end;
+    padding-bottom: 20px;
+  }
+
+  .actions button {
+    flex: none;
+    min-width: 104px;
+  }
+
+  /* Today: both statuses on one line, the figures on the next. */
+  .today-strip {
+    padding: 20px;
+  }
+
+  .today-items {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .today-item[data-field="exercise"],
+  .today-item[data-field="junk_food"] {
+    grid-column: span 2;
+    align-self: end;
+  }
+
+  .today-strip button {
+    width: auto;
+    min-width: 200px;
+  }
+
+  .legend {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 22px;
+  }
+
+  .counts.five {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  /* A section's supporting figures share one line. */
+  .tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .tiles > .tile:last-child:nth-child(even) {
+    grid-column: auto;
+  }
+
+  .cards.three {
+    gap: 14px;
+  }
+
+  .measure {
+    padding: 16px;
+  }
+
+  .measure .figure {
+    display: flex;
+  }
+
+  .measure .figure-value {
+    display: inline;
+    font-size: 30px;
+  }
+
+  .measure .figure-label {
+    font-size: 13px;
+  }
+
+  /* Previous, change and change in percent side by side. */
+  .trio {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .trio-cell {
+    display: block;
+  }
+
+  .trio-cell .sub {
+    text-align: left;
+  }
+
+  .trio-label,
+  .measure-note {
+    font-size: 12.5px;
+  }
+
+  .trio-value {
+    font-size: 16px;
+  }
+}
+
+@media (min-width: 700px) {
+  /* The feed of days, and of Sundays, runs in two columns. */
+  .stack-rows tbody,
+  #days-body {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #days-body tr {
+    grid-column: auto;
+  }
+
+  .stack-rows tbody tr:nth-child(odd) {
+    border-right: 1px solid var(--line);
+  }
+
+  .stack-rows tbody tr:nth-child(2) {
+    border-top: 0;
+  }
+
+  #days-body tr.week-start:not(:first-child) {
+    border-top: 1px solid var(--line);
+  }
+
+  #days-body tr.week-start:nth-child(2) {
+    border-top: 0;
+  }
+
+  .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .counts.five {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ---------------------------------------------------------------- desks */
+
+@media (min-width: 1000px) {
+  h1 {
+    font-size: 16px;
+  }
+
+  .top-inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 2px 24px;
+    padding-top: 18px;
+  }
+
+  .workbook-status {
+    margin: 0;
+  }
+
+  /* There is room for the month as a heading, with its controls beside it. */
+  .toolbar {
+    gap: 12px;
+    margin-top: 20px;
+  }
+
+  .toolbar h2,
+  .toolbar label,
+  .add-text {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+  }
+
+  .toolbar h2 {
+    margin-right: auto;
+  }
+
+  .toolbar label {
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  select,
+  input,
+  button {
+    height: 42px;
+  }
+
+  select,
+  input {
+    font-size: 15px;
+  }
+
+  button.small {
+    height: 32px;
+  }
+
+  #month-select {
+    flex: none;
+    min-width: 200px;
+    height: 42px;
+    font-size: 15px;
+    letter-spacing: 0;
+  }
+
+  #add-month {
+    width: auto;
+    height: 42px;
+    padding: 0 16px;
+    background: transparent;
+  }
+
+  .add-plus {
+    margin-right: 6px;
+    font-size: 17px;
+  }
+
+  .month-bar {
+    margin-top: 14px;
+  }
+
+  .section-nav {
+    overflow-x: visible;
+  }
+
+  .section-nav a {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .month-bar.stuck .bar-month {
+    max-width: 180px;
+    margin-right: 14px;
+    padding-right: 14px;
+  }
+
+  /* Today: one line across the page. */
+  .today-strip {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px 28px;
+    margin-top: 22px;
+    padding: 20px 22px;
+  }
+
+  .today-head {
+    display: block;
+    margin: 0;
+  }
+
+  .today-date {
+    display: block;
+    margin-top: 2px;
+    color: var(--text);
+    font-size: 18px;
+  }
+
+  .today-items {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+  }
+
+  .today-item[data-field="exercise"],
+  .today-item[data-field="junk_food"] {
+    align-self: center;
+    margin-right: 12px;
+  }
+
+  .today-item[data-field="exercise"] dd,
+  .today-item[data-field="exercise"] dd.blank {
+    font-size: 21px;
+  }
+
+  .today-items dd {
+    white-space: nowrap;
+  }
+
+  .today-item[data-field="cardio"],
+  .today-item[data-field="calories_kcal"],
+  .today-item[data-field="protein_g"],
+  .today-item[data-field="weight_lifted_kg"] {
+    min-width: 112px;
+  }
+
+  .today-strip button {
+    min-width: 0;
+    margin-top: 0;
+  }
+
+  .block {
+    margin-top: 52px;
+  }
+
+  .block[data-section="daily"],
+  .block[data-section="protein"],
+  .block[data-section="weight"],
+  .block[data-section="sunday"] {
+    margin-top: 38px;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  /* The days and the Sundays are tables again. */
+  .stack-rows {
+    display: table;
+  }
+
+  .stack-rows thead {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+  }
+
+  .stack-rows tbody,
+  #days-body {
+    display: table-row-group;
+  }
+
+  .stack-rows tbody tr,
+  #days-body tr.upcoming,
+  #measurements-body tr.upcoming,
+  #measurements-table.stack-rows tbody tr {
+    display: table-row;
+  }
+
+  .stack-rows tbody tr,
+  .stack-rows tbody tr:nth-child(odd),
+  #days-body tr.upcoming,
+  #days-body tr.week-start:not(:first-child) {
+    border: 0;
+  }
+
+  .stack-rows td {
+    display: table-cell;
+    padding: 9px 14px;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* A day still to come has all its cells again. */
+  #days-body tr.upcoming td[data-label],
+  #days-body tr.upcoming td.action,
+  #measurements-body tr.upcoming td[data-label],
+  #measurements-body tr.upcoming td.action {
+    display: table-cell;
+  }
+
+  .stack-rows tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .stack-rows td[data-label]::before {
+    content: none;
+  }
+
+  .stack-rows td:first-child,
+  #days-body tr.upcoming td:first-child,
+  #measurements-body tr.upcoming td:first-child {
+    font-size: inherit;
+    font-weight: 400;
+  }
+
+  .stack-rows td.num {
+    text-align: right;
+  }
+
+  .stack-rows td.action {
+    text-align: right;
+  }
+
+  #days-body tr.week-start:not(:first-child) td {
+    border-top: 2px solid var(--line-strong);
+  }
+
+  #days-body tr.today {
+    box-shadow: none;
+  }
+
+  #days-body tr.today td:first-child {
+    font-weight: 600;
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+
+  #days-body td,
+  #measurements-body td {
+    transition: background-color var(--fast) ease;
+  }
+
+  #days-body tr:not(.today):hover td,
+  #measurements-body tr:hover td {
+    background: var(--inset);
+  }
+
+  /* Cardio, weight, calories and protein: the figures down the left, the chart
+     beside them with the room it needs, the weekly table across the foot. */
+  .block[data-section="cardio"],
+  .block[data-section="weight"],
+  .block[data-section="calories"],
+  .block[data-section="protein"] {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    column-gap: 28px;
+    align-items: start;
+  }
+
+  .block[data-section="cardio"] > *,
+  .block[data-section="weight"] > *,
+  .block[data-section="calories"] > *,
+  .block[data-section="protein"] > *,
+  .block[data-section="cardio"]::before,
+  .block[data-section="weight"]::before,
+  .block[data-section="calories"]::before,
+  .block[data-section="protein"]::before {
+    grid-column: 1 / -1;
+  }
+
+  .block[data-section="cardio"] > .tiles,
+  .block[data-section="weight"] > .tiles,
+  .block[data-section="calories"] > .tiles,
+  .block[data-section="protein"] > .tiles {
+    grid-column: 1;
+    grid-row: span 2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 6px;
+  }
+
+  .block[data-section="cardio"] > .tiles > .tile:last-child:nth-child(even),
+  .block[data-section="weight"] > .tiles > .tile:last-child:nth-child(even),
+  .block[data-section="calories"] > .tiles > .tile:last-child:nth-child(even),
+  .block[data-section="protein"] > .tiles > .tile:last-child:nth-child(even) {
+    grid-column: 1 / -1;
+  }
+
+  .block > .tiles + h4,
+  .block > .tiles + h4 + .chart-scroll,
+  .block > .tiles + .empty-box {
+    grid-column: 2;
+  }
+
+  .block > .tiles + h4 {
+    margin-top: 6px;
+  }
+
+  .block > .tiles + .empty-box {
+    min-height: 190px;
+    margin-top: 6px;
+  }
+
+  .chart {
+    min-width: 0;
+  }
+
+  .card {
+    padding: 20px;
+  }
+
+  .figure-value {
+    font-size: 44px;
+  }
+
+  /* The six measurements, three to a line. */
+  .cards.three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .measure {
+    padding: 18px 20px;
+  }
+
+  .weekly th[scope="row"] {
+    min-width: 0;
+    max-width: none;
+    white-space: nowrap;
+  }
+}
+
+@media (min-width: 1200px) {
+  /* The five counts of a habit fit on one line of its card. */
+  .counts.five {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+/* ---------------------------------------------------------------- reduced motion */
+
+/* For someone who has asked their computer for less motion: nothing moves or
+   fades. Every state still changes, only at once. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after,
+  dialog::backdrop {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+}

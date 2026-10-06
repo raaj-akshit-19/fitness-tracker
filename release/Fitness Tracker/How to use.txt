@@ -1,0 +1,38 @@
+FITNESS TRACKER
+
+1. Double-click "Fitness Tracker.exe". A window opens and stays open.
+2. Your browser opens the dashboard by itself.
+3. Enter your day on the dashboard. Press "Edit today", or Edit on any day's
+   row, fill in what you did, and press Save. Each Sunday has its own Edit
+   for body measurements. Days in the future cannot be edited yet.
+4. Save writes the change into Fitness_Tracker.xlsx. Nothing is written until
+   you press Save, and Cancel throws your changes away.
+5. Use Select Month on the dashboard to look at another month.
+6. Use "+ Add New Month" to create a month.
+7. When you are finished, close the Fitness Tracker window. That stops it.
+
+Keep Fitness_Tracker.xlsx in the same folder as Fitness Tracker.exe.
+You can move the folder anywhere, as long as the two stay together.
+
+What each entry is:
+  Exercise        Completed, Partial, Rest Day or Missed
+  Junk Food       None, Controlled or Had
+  Cardio          minutes and seconds, typed as min:sec, for example 25:30
+  Calories        kcal for the day, a whole number
+  Protein         grams for the day
+  Weight Lifted   one number in kg for the whole day
+  Measurements    weight in kg and five sizes in cm, on Sundays
+A field left blank is not entered. For Exercise, a past day left blank counts
+as missed; today stays pending until you enter it.
+
+Excel
+  You do not need Excel to use the tracker. While the workbook is open in
+  Excel the dashboard cannot save: close it in Excel, then press Save again.
+  You can also type into the workbook in Excel. Save the workbook and the
+  dashboard updates by itself within a few seconds.
+
+BACK UP Fitness_Tracker.xlsx from time to time, for example by copying it to
+another drive. It holds all of your data. The program only ever changes what
+you save from the dashboard, and never replaces the workbook with a new one.
+
+Everything runs on this computer only. No internet connection is needed.

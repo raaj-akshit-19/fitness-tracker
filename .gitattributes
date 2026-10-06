@@ -1,0 +1,6 @@
+# Store every file exactly as it is. The .bat launcher needs its Windows line
+# endings, and one test compares the page files byte for byte with the ones
+# inside the built program.
+* -text
+*.xlsx binary
+*.exe binary
