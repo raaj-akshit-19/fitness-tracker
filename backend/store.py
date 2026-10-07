@@ -49,6 +49,10 @@ class MonthExistsError(TrackerError):
     code = "month_exists"
 
 
+class LastMonthError(TrackerError):
+    code = "last_month"
+
+
 class WorkbookNotFoundError(TrackerError):
     code = "workbook_missing"
 
@@ -228,6 +232,38 @@ class TrackerStore:
             _move_into_calendar_order(wb, ws, year, month)
             self._save(wb, name)
             return _read_month(wb, year, month)
+
+    def delete_month(self, year, month):
+        """Remove a month's sheet from the workbook, with everything entered in it.
+
+        The last month is never removed: the workbook always keeps at least
+        one. Every other sheet is left exactly as it was.
+        """
+        validate_month(year, month)
+        with self._write_lock:
+            self._ensure_writable()
+            wb = self._load()
+            name = wbk.sheet_name(year, month)
+            if name not in wb.sheetnames:
+                raise MonthNotFoundError(f"{name} does not exist.")
+            if len(wbk.list_months(wb)) <= 1:
+                raise LastMonthError(
+                    f"{name} is the only month in the workbook, so it cannot be deleted. "
+                    "Add another month first."
+                )
+            remaining = [title for title in wb.sheetnames if title != name]
+            wb.remove(wb[name])
+            wb.active = 0       # the sheet Excel opens on must be one that is still there
+
+            def verify(saved):
+                if saved.sheetnames != remaining:
+                    raise WorkbookUnreadableError("The saved workbook failed verification.")
+
+            self._save(wb, verify=verify)
+            return {
+                "deleted": _month_summary(year, month),
+                "months": [_month_summary(*found) for found in wbk.list_months(wb)],
+            }
 
     def _load(self):
         if not self.path.exists():

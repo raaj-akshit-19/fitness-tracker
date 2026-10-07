@@ -22,6 +22,7 @@
       <label for="month-select">Select Month</label>
       <select id="month-select" disabled></select>
       <button id="add-month" type="button" class="secondary" title="Add New Month"><span class="add-plus" aria-hidden="true">+</span><span class="add-text">Add New Month</span></button>
+      <button id="delete-month" type="button" class="secondary" title="Delete Month"><span class="add-plus" aria-hidden="true">&minus;</span><span class="add-text">Delete Month</span></button>
     </div>
 
     <p id="notice" class="notice" role="alert" hidden></p>
@@ -54,6 +55,11 @@
           in the future cannot be edited yet.
         </p>
         <p id="saved-note" class="saved-note" role="status" hidden></p>
+        <div class="days-nav">
+          <button id="days-earlier" type="button" class="secondary small" aria-controls="days-body">Earlier</button>
+          <p id="days-range" class="days-range" role="status"></p>
+          <button id="days-later" type="button" class="secondary small" aria-controls="days-body">Later</button>
+        </div>
         <div class="table-scroll">
           <table id="days-table" class="stack-rows">
             <thead>
@@ -138,6 +144,23 @@
       <div class="actions">
         <button id="add-cancel" type="button" class="secondary">Cancel</button>
         <button id="add-submit" type="submit">Create Month</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="delete-dialog" aria-labelledby="delete-title">
+    <form id="delete-form">
+      <h2 id="delete-title">Delete Month</h2>
+      <div class="field">
+        <label for="delete-select">Month</label>
+        <select id="delete-select"></select>
+      </div>
+      <p id="delete-hint" class="edit-hint"></p>
+      <p id="delete-confirm" class="notice" role="alert" hidden></p>
+      <p id="delete-error" class="notice" role="alert" hidden></p>
+      <div class="actions">
+        <button id="delete-cancel" type="button" class="secondary">Cancel</button>
+        <button id="delete-submit" type="submit">Delete Month</button>
       </div>
     </form>
   </dialog>

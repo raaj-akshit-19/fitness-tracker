@@ -680,6 +680,7 @@ class ApiTests(unittest.TestCase):
         rules = sorted(f"{sorted(rule.methods - {'HEAD', 'OPTIONS'})[0]} {rule.rule}"
                        for rule in self.client.application.url_map.iter_rules() if rule.rule.startswith("/api/"))
         self.assertEqual(rules, [
+            "DELETE /api/months/<int:year>/<int:month>",
             "GET /api/months",
             "GET /api/months/<int:year>/<int:month>",
             "GET /api/months/<int:year>/<int:month>/analytics",

@@ -85,7 +85,28 @@ function write(server, url, changes) {
   };
 }
 
-const parseDayOfWeek = (iso) => new Date(`${iso}T00:00:00Z`).getUTCDay();
+// What the backend does with an accepted deletion: the month is gone from the
+// list and can no longer be read. It refuses the only month, and a request
+// that does not name the month, as the real one does.
+function remove(server, url, body) {
+  if (server.reply) return typeof server.reply === "function" ? server.reply(url, body) : server.reply;
+  const match = url.match(/^\/api\/months\/(\d+)\/(\d+)$/);
+  const found = server.months.find((month) => month.year === Number(match[1]) && month.month === Number(match[2]));
+  if (!found) return { status: 404, body: { error: { code: "month_not_found", message: "No such month." } } };
+  if (!body || body.confirm !== found.label) {
+    return { status: 400, body: { error: { code: "invalid_request", message: "Name the month." } } };
+  }
+  if (server.months.length <= 1) {
+    return { status: 409, body: { error: { code: "last_month", message: "It is the only month." } } };
+  }
+  server.months = server.months.filter((month) => month !== found);
+  delete server.data[`${found.year}-${found.month}`];
+  server.writes += 1;
+  server.status.workbook_modified = `2026-10-20T22:00:${String(server.writes).padStart(2, "0")}`;
+  return { status: 200, body: { deleted: found, months: server.months } };
+}
+
+const parseDayOfWeek =(iso) => new Date(`${iso}T00:00:00Z`).getUTCDay();
 
 // boot() starts the page on the four-month workbook; boot({ editing: true }) on
 // the editors' one.
@@ -117,7 +138,9 @@ async function boot({ editing = false, narrow = null } = {}) {
     if (method === "GET") calls.push(url);
     else requests.push({ method, url, headers: options.headers, body: options.body });
     if (server.down) throw new TypeError("Failed to fetch");
-    const reply = method === "GET" ? respond(server, url) : await write(server, url, JSON.parse(options.body));
+    const reply = method === "GET" ? respond(server, url)
+      : method === "DELETE" ? remove(server, url, JSON.parse(options.body))
+        : await write(server, url, JSON.parse(options.body));
     if (method !== "GET") lastReply = reply;
     return { ok: reply.status < 400, status: reply.status, json: async () => reply.body };
   };
@@ -188,7 +211,43 @@ const weekRow = (app, number) =>
 const weekCell = (app, number, habit, stat) =>
   find(weekRow(app, number), both(hasData("habit", habit), hasData("stat", stat))).textContent;
 const measureCard = (app, key) => find(app.section("measurements"), hasData("measure", key));
-const trackerRow = (app, date) => find(app.tracker, (node) => node.tagName === "tr" && node.dataset.date === date);
+// The daily tracker shows five days at a time. A test reaches a day as a user
+// does: with Earlier and Later, until that day is one of the five.
+function showDay(app, date) {
+  const body = app.document.getElementById("days-body");
+  const shown = () => body.children.some((row) => row.dataset.date === date);
+  for (let presses = 0; presses < 12 && !shown() && body.children.length > 0; presses++) {
+    const button = app.document.getElementById(date < body.children[0].dataset.date ? "days-earlier" : "days-later");
+    if (button.disabled) break;
+    button.fire("click");
+  }
+}
+const trackerRow = (app, date) => {
+  showDay(app, date);
+  return find(app.tracker, (node) => node.tagName === "tr" && node.dataset.date === date);
+};
+// Every row of the month on screen, read by going through all of its windows
+// and coming back to the one that was showing. Used where a test is about the
+// whole month, as the tracker's rows used to be.
+function monthRows(app) {
+  const body = app.document.getElementById("days-body");
+  const earlier = app.document.getElementById("days-earlier"), later = app.document.getElementById("days-later");
+  let net = 0;
+  for (let i = 0; i < 12 && earlier.disabled === false; i++) { earlier.fire("click"); net -= 1; }
+  const rows = new Map(body.children.map((row) => [row.dataset.date, row]));
+  for (let i = 0; i < 12 && later.disabled === false; i++) {
+    later.fire("click");
+    net += 1;
+    for (const row of body.children) if (!rows.has(row.dataset.date)) rows.set(row.dataset.date, row);
+  }
+  for (; net > 0; net--) earlier.fire("click");
+  for (; net < 0; net++) later.fire("click");
+  return [...rows.values()];
+}
+const wholeMonth = (app) => {
+  const children = monthRows(app);
+  return { children, dataset: {}, className: "", tagName: "tbody", textContent: children.map((row) => row.textContent).join("") };
+};
 const weekTotals = (root, stat) => findAll(root, hasData("stat", stat)).map((cell) => cell.textContent);
 
 // ---------------------------------------------------------------- the day editor
@@ -251,15 +310,15 @@ test("a month shows its fields as words and numbers, with an Edit column", async
   assert.deepEqual(rowText(app, "2026-10-06"),
     ["Tue 06 Oct", "Unreadable", "Not entered", "25:75", "Unreadable", "-", "-", "Edit"]);
   assert.match(rowText(app, "2026-10-20")[0], /^Tue 20 OctToday$/);
-  assert.equal(app.tracker.children.length, 31);
-  assert.ok(app.tracker.children.every((row) => row.children.length === 8));
+  assert.equal(wholeMonth(app).children.length, 31);
+  assert.ok(wholeMonth(app).children.every((row) => row.children.length === 8));
 
   // The table is a display: one Edit button a row, and no inputs or dropdowns in it.
-  const controls = findAll(app.tracker, (node) => ["input", "select", "textarea", "button"].includes(node.tagName));
+  const controls = findAll(wholeMonth(app), (node) => ["input", "select", "textarea", "button"].includes(node.tagName));
   assert.equal(controls.length, 31);
   assert.ok(controls.every((node) => node.tagName === "button" && node.textContent === "Edit"));
-  assert.doesNotMatch(app.tracker.textContent, /\b(true|false|null|undefined|NaN)\b/i);
-  assert.equal(findAll(app.tracker, hasClass("box")).length, 0);          // statuses are words with marks, never tick boxes
+  assert.doesNotMatch(wholeMonth(app).textContent, /\b(true|false|null|undefined|NaN)\b/i);
+  assert.equal(findAll(wholeMonth(app), hasClass("box")).length, 0);          // statuses are words with marks, never tick boxes
 });
 
 test("a month keeps its two tables, with the editors' notes, above the analytics", async () => {
@@ -374,7 +433,7 @@ test("Save sends one PUT to that day with the changed fields as JSON", async () 
   // Other days are as they were.
   assert.deepEqual(rowText(app, "2026-10-01"),
     ["Thu 01 Oct", "Completed", "None", "25:30", "2,200", "140.5", "2,450", "Edit"]);
-  assert.equal(app.tracker.children.length, 31);
+  assert.equal(wholeMonth(app).children.length, 31);
 });
 
 test("the stand-in backend in these tests answers an edit as the real one does", async () => {
@@ -580,7 +639,7 @@ test("a day in the future cannot be saved", async () => {
   assert.equal(editButton(app, "2026-10-21").disabled, true);
   assert.equal(editButton(app, "2026-10-31").disabled, true);
   assert.equal(editButton(app, "2026-10-21").attributes.title, "Days in the future cannot be edited yet.");
-  assert.equal(findAll(app.tracker, (node) => node.tagName === "button" && node.disabled).length, 11);
+  assert.equal(findAll(wholeMonth(app), (node) => node.tagName === "button" && node.disabled).length, 11);
 
   // Even if the editor were opened on such a day, it will not save.
   openDay(app, "2026-10-21");
@@ -603,8 +662,8 @@ test("a day in the future cannot be saved", async () => {
 
   // A month that has not started: every day waits.
   await app.select("2026-11");
-  assert.equal(app.tracker.children.length, 30);
-  assert.equal(findAll(app.tracker, (node) => node.tagName === "button" && !node.disabled).length, 0);
+  assert.equal(wholeMonth(app).children.length, 30);
+  assert.equal(findAll(wholeMonth(app), (node) => node.tagName === "button" && !node.disabled).length, 0);
 
   // When the date moves on, the next day opens up.
   await app.select("2026-10");
@@ -737,7 +796,7 @@ test("the editor can be used from the keyboard and by a screen reader", async ()
   assert.equal(editButton(app, "2026-10-01").attributes["aria-label"], "Edit Thu 01 Oct");
   assert.equal(editButton(app, "2026-10-01").attributes.type, "button");
   assert.equal(editButton(app, "2026-10-21").attributes["aria-label"], "Edit Wed 21 Oct: not available until that day");
-  const labels = findAll(app.tracker, (node) => node.tagName === "button").map((node) => node.attributes["aria-label"]);
+  const labels = findAll(wholeMonth(app), (node) => node.tagName === "button").map((node) => node.attributes["aria-label"]);
   assert.equal(new Set(labels).size, 31);                              // every button says which day
 
   // After a save the focus goes back to that day's Edit button, in the redrawn table.
@@ -758,16 +817,16 @@ test("the editor can be used from the keyboard and by a screen reader", async ()
   assert.match(el(app, "saved-note").textContent, /^Saved: /);        // the confirmation is words too
 });
 
-test("the page writes only through Add New Month and the editors", async () => {
+test("the page writes only through Add New Month, Delete Month and the editors", async () => {
   const app = await boot();
-  // Add New Month, and the one PUT both editors share.
+  // Add New Month, Delete Month, and the one PUT both editors share.
   const methods = SCRIPTS.map((script) => script.source).join("\n").match(/method:\s*"\w+"/g);
-  assert.deepEqual(methods, ['method: "POST"', 'method: "PUT"']);
+  assert.deepEqual(methods, ['method: "POST"', 'method: "DELETE"', 'method: "PUT"']);
   const controls = (root) => findAll(root, (node) => ["input", "select", "button", "textarea"].includes(node.tagName));
   assert.equal(controls(app.body).length, 0);
   // The tracker is a display with one Edit button for each day; nothing is typed into it.
-  assert.equal(controls(app.tracker).length, 31);
-  assert.ok(controls(app.tracker).every((node) => node.tagName === "button" && node.textContent === "Edit"));
+  assert.equal(controls(wholeMonth(app)).length, 31);
+  assert.ok(controls(wholeMonth(app)).every((node) => node.tagName === "button" && node.textContent === "Edit"));
 
   // Nothing is saved while fields are being changed: no listeners on the fields themselves.
   const editor = await boot({ editing: true });
@@ -838,10 +897,10 @@ test("each Sunday of a month can be edited, and only Sundays", async () => {
     "Edit measurements for Sun 04 Oct", "Edit measurements for Sun 11 Oct",
     "Edit measurements for Sun 18 Oct", "Edit measurements for Sun 25 Oct: not available until that day",
   ]);
-  const everyButton = findAll({ children: [app.tracker, el(app, "measurements-body"), app.body], dataset: {}, className: "" },
+  const everyButton = findAll({ children: [wholeMonth(app), el(app, "measurements-body"), app.body], dataset: {}, className: "" },
     (node) => node.tagName === "button");
   assert.equal(everyButton.filter((button) => /measurements/.test(button.attributes["aria-label"])).length, 4);
-  assert.equal(findAll(app.tracker, (node) => node.tagName === "button"
+  assert.equal(findAll(wholeMonth(app), (node) => node.tagName === "button"
     && /measurements/.test(node.attributes["aria-label"])).length, 0);
   // The table itself stays a display.
   assert.equal(findAll(el(app, "measurements-body"), (node) => ["input", "select", "textarea"].includes(node.tagName)).length, 0);
@@ -904,7 +963,7 @@ test("each of the six measurements is saved under its own field name", async () 
 test("Save sends one PUT with the changed measurements and shows the saved record", async () => {
   const app = await boot({ editing: true });
   app.server.reply = MEASURE.edit.reply;            // what the real backend answered to this edit
-  const days = app.tracker.textContent;
+  const days = wholeMonth(app).textContent;
   openSunday(app, "2026-10-04");
   mType(app, { weight_kg: "70.5", waist_cm: "", chest_cm: "98" });
   app.calls.length = 0;
@@ -922,13 +981,13 @@ test("Save sends one PUT with the changed measurements and shows the saved recor
   assert.ok(!mOpen(app));
   assert.deepEqual(sundayText(app, "2026-10-04"), ["Sun 04 Oct", "70.5", "-", "98", "-", "-", "-", "Edit"]);
   assert.deepEqual(sundayText(app, "2026-10-11"), ["Sun 11 Oct", "72", "-", "Unreadable", "-", "-", "28.5", "Edit"]);
-  assert.equal(app.tracker.textContent, days);                         // the daily table is as it was
   assert.deepEqual(app.calls, ["/api/months/2026/10/analytics"]);      // the analytics, once; nothing else is read
   assert.equal(el(app, "measure-saved-note").hidden, false);
   assert.equal(el(app, "measure-saved-note").textContent,
     "Saved: measurements for Sun 04 Oct were written to the workbook.");
   assert.equal(el(app, "saved-note").textContent, "");                 // the daily note is not used for this
-  assert.equal(app.document.activeElement, sundayButton(app, "2026-10-04"));
+  assert.ok(app.document.activeElement === sundayButton(app, "2026-10-04"));
+  assert.equal(wholeMonth(app).textContent, days);                         // the daily table is as it was
 });
 
 test("the stand-in backend answers a measurement edit as the real one does", async () => {
@@ -1224,11 +1283,11 @@ test("both editors share one way of working", async () => {
   assert.equal(el(app, "measurements-body").textContent, sundays);
   assert.equal(app.requests[0].url, "/api/months/2026/10/days/4");
 
-  const days = app.tracker.textContent;
+  const days = wholeMonth(app).textContent;
   openSunday(app, "2026-10-04");
   mType(app, { thigh_cm: "59" });
   await mSave(app);
-  assert.equal(app.tracker.textContent, days);
+  assert.equal(wholeMonth(app).textContent, days);
   assert.equal(app.requests[1].url, "/api/months/2026/10/measurements/4");
   assert.deepEqual(sent(app)[1], { thigh_cm: 59 });
 });
@@ -1696,7 +1755,7 @@ test("after a save the analytics follow at once, and the next poll reads the mon
 test("failed or unusable analytics keep the last dashboard and say so", async () => {
   const app = await boot({ editing: true });
   const before = app.body.textContent;
-  const table = app.tracker.textContent;
+  const table = wholeMonth(app).textContent;
   const locked = { status: 423, body: { error: { code: "workbook_locked", message: "The workbook is locked." } } };
 
   app.server.override = { "/api/months/2026/10/analytics": locked };
@@ -1724,7 +1783,7 @@ test("failed or unusable analytics keep the last dashboard and say so", async ()
     assert.equal(app.notice.hidden, false);
     assert.match(app.notice.textContent, /^The page could not display this data/);
     assert.equal(app.body.textContent, before);
-    assert.equal(app.tracker.textContent, table);
+    assert.equal(wholeMonth(app).textContent, table);
   }
 
   app.server.data["2026-10"] = structuredClone(EDITING.data["2026-10"]);
@@ -1768,7 +1827,7 @@ test("no goals, scores or rankings appear in a month", async () => {
   const app = await boot({ editing: true });
   for (const key of ["2026-10", "2026-11"]) {
     await app.select(key);
-    const text = app.body.textContent + app.tracker.textContent;
+    const text = app.body.textContent + wholeMonth(app).textContent;
     assert.doesNotMatch(text, /year|annual|goal|target|score|rating|\bgrade|rank|winner/i, key);
     assert.doesNotMatch(text, /muscle|1RM|bench|squat|deadlift/i, key);
   }
@@ -1824,6 +1883,7 @@ test("a refresh tints only the figures and rows that changed", async () => {
   await app.save();
   assert.equal(tinted(app).length, 0);                           // nothing changed, nothing tinted
 
+  showDay(app, "2026-10-02");            // a row can only be tinted while its day is one of the five on screen
   const changed = structuredClone(EDITING.data["2026-10"]);
   changed.analytics.calories.total_kcal = 9000;
   changed.analytics.exercise.counts.completed = 5;
@@ -1981,9 +2041,9 @@ test("each status is shown with its own mark and its word, and each value with a
   assert.deepEqual(seen("2026-10-20", 1), ["mark", "true", "Not entered", "status blank"]);
   assert.deepEqual(seen("2026-10-25", 2), ["mark", "true", "Not entered", "status blank"]);
   // The seven statuses and the two kinds of blank use six looks between them, and every one has its word.
-  const marks = new Set(findAll(app.tracker, hasClass("mark")).map((node) => node.className));
+  const marks = new Set(findAll(wholeMonth(app), hasClass("mark")).map((node) => node.className));
   assert.deepEqual([...marks].sort(), ["mark", "mark completed", "mark missed", "mark partial", "mark rest", "mark unentered"]);
-  assert.equal(findAll(app.tracker, hasClass("mark")).length, 61);           // one cell is unreadable instead
+  assert.equal(findAll(wholeMonth(app), hasClass("mark")).length, 61);           // one cell is unreadable instead
 
   assert.deepEqual(trackerRow(app, "2026-10-01").children.map((td) => td.dataset.label),
     [undefined, "Exercise", "Junk Food", "Cardio", "Calories", "Protein (g)", "Lifted (kg)", undefined]);
@@ -1994,8 +2054,8 @@ test("each status is shown with its own mark and its word, and each value with a
   const old = await boot();
   assert.deepEqual(trackerRow(old, "2026-10-01").children.map((td) => td.dataset.label),
     [undefined, "Exercise", "Junk Food", "Cardio", "Calories", "Protein (g)", "Lifted (kg)", undefined]);
-  assert.equal(findAll(old.tracker, hasClass("mark")).length, 62);
-  assert.equal(findAll(old.tracker, hasClass("box")).length, 0);
+  assert.equal(findAll(wholeMonth(old), hasClass("mark")).length, 62);
+  assert.equal(findAll(wholeMonth(old), hasClass("box")).length, 0);
 });
 
 test("the note about unreadable cells says where they can be corrected", async () => {
@@ -2120,7 +2180,7 @@ test("a figure carries its unit in a part of its own and still reads the same", 
   assert.deepEqual(parts(shown("cardio")), ["25:30", []]);
   assert.deepEqual(parts(shown("protein_g")), ["Not entered", []]);
   // The daily tracker keeps plain numbers: each of its columns names the unit once.
-  assert.equal(findAll(app.tracker, hasClass("unit")).length, 0);
+  assert.equal(findAll(wholeMonth(app), hasClass("unit")).length, 0);
   assert.equal(findAll(el(app, "measurements-body"), hasClass("unit")).length, 0);
 
   // The same in the other workbook.
@@ -2135,7 +2195,7 @@ test("days and Sundays still to come with nothing in them are marked, so a phone
   const app = await boot({ editing: true });
   // Today is 20 October: the 21st to the 31st have not come and hold nothing.
   const rest = Array.from({ length: 11 }, (_, index) => `2026-10-${21 + index}`);
-  assert.deepEqual(upcomingRows(app.tracker), rest);
+  assert.deepEqual(upcomingRows(wholeMonth(app)), rest);
   assert.deepEqual(upcomingRows(el(app, "measurements-body")), ["2026-10-25"]);
   // Today and the days before it never are, entered or not.
   assert.ok(!hasClass("upcoming")(trackerRow(app, "2026-10-20")));
@@ -2154,20 +2214,20 @@ test("days and Sundays still to come with nothing in them are marked, so a phone
   changed.month.issues.push({ date: "2026-10-27", field: "protein_g", value: "lots", message: "Not a number." });
   app.server.data["2026-10"] = changed;
   await app.save();
-  assert.deepEqual(upcomingRows(app.tracker), rest.filter((date) => !["2026-10-25", "2026-10-27"].includes(date)));
+  assert.deepEqual(upcomingRows(wholeMonth(app)), rest.filter((date) => !["2026-10-25", "2026-10-27"].includes(date)));
   assert.deepEqual(upcomingRows(el(app, "measurements-body")), []);
 
   // A whole month that has not started: every day of it.
   await app.select("2026-11");
-  assert.equal(upcomingRows(app.tracker).length, 30);
+  assert.equal(upcomingRows(wholeMonth(app)).length, 30);
   assert.equal(upcomingRows(el(app, "measurements-body")).length, 5);
 
   // The same in the other workbook.
   const old = await boot();
-  assert.deepEqual(upcomingRows(old.tracker), rest);
+  assert.deepEqual(upcomingRows(wholeMonth(old)), rest);
   assert.deepEqual(upcomingRows(el(old, "measurements-body")), ["2026-10-25"]);
   await old.select("2026-11");
-  assert.equal(upcomingRows(old.tracker).length, 29);                          // 2 November has an entry
+  assert.equal(upcomingRows(wholeMonth(old)).length, 29);                          // 2 November has an entry
   assert.ok(!hasClass("upcoming")(trackerRow(old, "2026-11-02")));
   assert.equal(upcomingRows(el(old, "measurements-body")).length, 4);          // and so has Sunday 1 November
 });
@@ -2485,17 +2545,17 @@ test("the daily tracker flags today, in the month that holds it", async () => {
   const app = await boot();
   assert.match(trackerRow(app, "2026-10-20").children[0].textContent, /^Tue 20 OctToday$/);
   assert.match(trackerRow(app, "2026-10-20").className, /\btoday\b/);
-  const flagged = findAll(app.tracker, (node) => node.tagName === "tr" && /\btoday\b/.test(node.className));
+  const flagged = findAll(wholeMonth(app), (node) => node.tagName === "tr" && /\btoday\b/.test(node.className));
   assert.equal(flagged.length, 1);
   await app.select("2026-11");
-  assert.equal(findAll(app.tracker, (node) => node.tagName === "tr" && /\btoday\b/.test(node.className)).length, 0);
+  assert.equal(findAll(wholeMonth(app), (node) => node.tagName === "tr" && /\btoday\b/.test(node.className)).length, 0);
 });
 
 test("no yearly analytics, goals, scores or rankings appear in any month", async () => {
   const app = await boot();
   for (const key of ["2026-10", "2026-11", "2026-12", "2027-1"]) {
     await app.select(key);
-    const text = app.body.textContent + app.tracker.textContent;
+    const text = app.body.textContent + wholeMonth(app).textContent;
     assert.doesNotMatch(text, /year|annual|goal|target|score|rating|\bgrade|rank|winner/i, key);
     assert.doesNotMatch(text, /muscle|1RM|bench|squat|deadlift/i, key);
   }
@@ -2521,7 +2581,7 @@ test("there is one dashboard: the page's scripts hold no second layout and no wa
     assert.deepEqual(findAll(app.body, hasData("section")).map((node) => node.dataset.section), SECTIONS);
     assert.deepEqual(el(app, "days-head").children.map((th) => th.textContent), [
       "Date", "Exercise", "Junk Food", "Cardio (min:sec)", "Calories (kcal)", "Protein (g)", "Weight Lifted (kg)", "Edit"]);
-    assert.equal(findAll(app.tracker, (node) => node.tagName === "button").length, 31);
+    assert.equal(findAll(wholeMonth(app), (node) => node.tagName === "button").length, 31);
     assert.equal(findAll(el(app, "measurements-body"), (node) => node.tagName === "button").length, 4);
     assert.equal(todayButton(app).length, 1);
     assert.equal(app.requests.length, 0);
@@ -2531,7 +2591,7 @@ test("there is one dashboard: the page's scripts hold no second layout and no wa
 test("a month the backend cannot read is reported in its words, and the last good month stays", async () => {
   const app = await boot({ editing: true });
   const before = app.body.textContent;
-  const table = app.tracker.textContent;
+  const table = wholeMonth(app).textContent;
   // A sheet in the workbook that the tracker did not lay out: the backend refuses to guess, and says so.
   assert.equal(EDITING.other_layout_month.status, 500);
   assert.equal(EDITING.other_layout_month.body.error.code, "workbook_format");
@@ -2543,7 +2603,7 @@ test("a month the backend cannot read is reported in its words, and the last goo
   assert.match(app.notice.textContent, /Still showing October 2026, the last data that loaded\.$/);
   assert.equal(app.title.textContent, "October 2026");
   assert.equal(app.body.textContent, before);
-  assert.equal(app.tracker.textContent, table);
+  assert.equal(wholeMonth(app).textContent, table);
   assert.equal(app.requests.length, 0);                     // the page does nothing about it by itself
   // Once the sheet can be read, the next poll shows it.
   app.server.override = null;
@@ -2573,9 +2633,283 @@ test("a month added from the page is like any other: it can be edited at once", 
   assert.deepEqual(JSON.parse(app.requests[0].body), { year: 2026, month: 12 });
   assert.equal(app.title.textContent, "December 2026");
   assert.deepEqual(findAll(app.body, hasData("section")).map((node) => node.dataset.section), SECTIONS);
-  assert.equal(app.tracker.children.length, 31);
-  assert.equal(findAll(app.tracker, (node) => node.tagName === "button").length, 31);
-  assert.ok(findAll(app.tracker, (node) => node.tagName === "button").every((button) => button.disabled));   // all still to come
-  assert.equal(upcomingRows(app.tracker).length, 31);
+  assert.equal(wholeMonth(app).children.length, 31);
+  assert.equal(findAll(wholeMonth(app), (node) => node.tagName === "button").length, 31);
+  assert.ok(findAll(wholeMonth(app), (node) => node.tagName === "button").every((button) => button.disabled));   // all still to come
+  assert.equal(upcomingRows(wholeMonth(app)).length, 31);
   assert.equal(app.notice.hidden, true);
+});
+
+// ---------------------------------------------------------------- five days at a time
+
+const shownDates = (app) => el(app, "days-body").children.map((row) => row.dataset.date);
+const shownDays = (app) => shownDates(app).map((date) => Number(date.slice(8)));
+const span = (first) => [0, 1, 2, 3, 4].map((step) => first + step);
+
+test("the window is five days: today in the middle, or the nearest five at either end of the month", async () => {
+  const app = await boot({ editing: true });
+  const { dayWindow } = app.context;
+  const monthOf = (year, month, length) => Array.from({ length }, (_, index) =>
+    ({ date: `${year}-${String(month).padStart(2, "0")}-${String(index + 1).padStart(2, "0")}` }));
+  // Every day of a 28, 29, 30 and 31 day month: start = min(max(day - 2, 1), length - 4).
+  for (const [year, month, length] of [[2027, 2, 28], [2028, 2, 29], [2026, 11, 30], [2026, 10, 31]]) {
+    const days = monthOf(year, month, length);
+    assert.equal(days.length, length);
+    for (let day = 1; day <= length; day++) {
+      const found = dayWindow(days, days[day - 1].date, 0);
+      assert.equal(found.start, Math.min(Math.max(day - 2, 1), length - 4), `${length}-day month, day ${day}`);
+      assert.equal(found.last, length - 4);
+      assert.ok(found.start <= day && day <= found.start + 4, `day ${day} is one of the five`);
+    }
+  }
+  // The examples for a 31-day month, as written down.
+  const october = monthOf(2026, 10, 31);
+  const startFor = (day) => dayWindow(october, october[day - 1].date, 0).start;
+  assert.deepEqual([1, 2, 3, 4, 5, 7, 15, 28, 29, 30, 31].map(startFor), [1, 1, 1, 2, 3, 5, 13, 26, 27, 27, 27]);
+  // A month that is over rests on its last five days, and one still to come on its first five.
+  assert.equal(dayWindow(october, "2026-11-09", 0).start, 27);
+  assert.equal(dayWindow(october, "2026-09-30", 0).start, 1);
+  assert.equal(dayWindow(monthOf(2027, 2, 28), "2027-03-01", 0).start, 24);
+  // Moving: whole windows earlier or later, stopping at the ends, never fewer than five days.
+  assert.deepEqual([-3, -2, -1, 0, 1, 2, 3].map((shift) => dayWindow(october, "2026-10-15", shift).start), [1, 3, 8, 13, 18, 23, 27]);
+  assert.deepEqual([-1, 0, 1].map((shift) => dayWindow(october, "2026-10-01", shift).start), [1, 1, 6]);
+});
+
+test("the daily tracker shows five days around today and moves five at a time", async () => {
+  const app = await boot({ editing: true });                  // today is 20 October 2026
+  const earlier = el(app, "days-earlier"), later = el(app, "days-later"), range = el(app, "days-range");
+  assert.deepEqual(shownDays(app), [18, 19, 20, 21, 22]);
+  assert.equal(range.textContent, "18 to 22 Oct");
+  assert.match(el(app, "days-body").children[2].className, /\btoday\b/);          // today, in the middle, marked as before
+  assert.equal(el(app, "days-body").children[2].children[0].textContent, "Tue 20 OctToday");
+  assert.deepEqual([earlier.disabled, later.disabled], [false, false]);
+  assert.equal(earlier.attributes["aria-label"], "Earlier days, before Sun 18 Oct");
+  assert.equal(later.attributes["aria-label"], "Later days, after Thu 22 Oct");
+  // Days to come are shown, and still cannot be edited; days past and today can.
+  assert.deepEqual(el(app, "days-body").children.map((row) => find(row, (n) => n.tagName === "button").disabled),
+    [false, false, false, true, true]);
+
+  // Moving reads nothing and saves nothing: the month in hand is drawn again.
+  app.calls.length = 0;
+  earlier.fire("click");
+  assert.deepEqual(shownDays(app), span(13));
+  assert.equal(range.textContent, "13 to 17 Oct");
+  earlier.fire("click"); earlier.fire("click");
+  assert.deepEqual(shownDays(app), span(3));
+  earlier.fire("click");
+  assert.deepEqual(shownDays(app), span(1));                    // it stops at the first of the month: still five days
+  assert.equal(earlier.disabled, true);
+  earlier.fire("click");                                        // and a press there does nothing
+  assert.deepEqual(shownDays(app), span(1));
+  // Later the same number of times is back on today's five exactly.
+  for (let press = 0; press < 4; press++) later.fire("click");
+  assert.deepEqual(shownDays(app), [18, 19, 20, 21, 22]);
+  later.fire("click");
+  assert.deepEqual(shownDays(app), span(23));
+  later.fire("click");
+  assert.deepEqual(shownDays(app), span(27));                   // the last five, not a short window
+  assert.equal(later.disabled, true);
+  assert.equal(range.textContent, "27 to 31 Oct");
+  assert.deepEqual([app.calls.length, app.requests.length], [0, 0]);
+  // Every day of the month can be reached, each exactly as the workbook holds it.
+  assert.equal(monthRows(app).length, 31);
+});
+
+test("the window stays where the user left it through a refresh, and starts afresh in another month", async () => {
+  const app = await boot({ editing: true });
+  el(app, "days-earlier").fire("click");
+  el(app, "days-earlier").fire("click");
+  assert.deepEqual(shownDays(app), span(8));
+  await app.save();                                             // the workbook was saved elsewhere; the page reads it again
+  assert.deepEqual(shownDays(app), span(8));
+  await app.poll();
+  assert.deepEqual(shownDays(app), span(8));
+  // A month still to come opens on its first five days; coming back, October opens on today again.
+  await app.select("2026-11");
+  assert.deepEqual(shownDates(app), ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05"]);
+  assert.equal(el(app, "days-earlier").disabled, true);
+  assert.ok(el(app, "days-body").children.every((row) => find(row, (n) => n.tagName === "button").disabled));
+  el(app, "days-later").fire("click");
+  assert.deepEqual(shownDays(app), span(6));
+  for (let press = 0; press < 6; press++) el(app, "days-later").fire("click");
+  assert.deepEqual(shownDays(app), span(26));                   // a 30-day month ends on 26 to 30
+  await app.select("2026-10");
+  assert.deepEqual(shownDays(app), [18, 19, 20, 21, 22]);
+});
+
+test("the window follows today, at the start, the middle and the end of the month", async () => {
+  for (const [today, days] of [["2026-10-01", span(1)], ["2026-10-02", span(1)], ["2026-10-03", span(1)],
+    ["2026-10-04", span(2)], ["2026-10-05", span(3)], ["2026-10-07", span(5)], ["2026-10-15", span(13)],
+    ["2026-10-28", span(26)], ["2026-10-29", span(27)], ["2026-10-30", span(27)], ["2026-10-31", span(27)]]) {
+    const app = await boot({ editing: true });
+    const changed = structuredClone(EDITING.data["2026-10"]);
+    changed.analytics.month.today = today;
+    // As the backend would have it: on that day, a habit with nothing entered is pending, not missed.
+    const index = Number(today.slice(8)) - 1;
+    for (const habit of ["exercise", "junk_food"]) {
+      if (changed.month.days[index][habit] === null) changed.analytics.daily[index][`${habit}_status`] = "pending";
+    }
+    app.server.data["2026-10"] = changed;
+    await app.save();
+    assert.equal(app.notice.hidden, true, `${today}: ${app.notice.textContent} ${app.errors.join(" ")}`);
+    assert.deepEqual(shownDays(app), days, today);
+    assert.equal(shownDays(app).length, 5, today);
+    const marked = el(app, "days-body").children.filter((row) => /\btoday\b/.test(row.className)).map((row) => row.dataset.date);
+    assert.deepEqual(marked, [today], today);
+  }
+});
+
+test("a day reached by moving the window is edited and saved exactly as before", async () => {
+  const app = await boot({ editing: true });
+  openDay(app, "2026-10-05");                                   // three windows back
+  assert.ok(isOpen(app));
+  assert.equal(el(app, "edit-date").textContent, "Monday, 5 October 2026");
+  type(app, { exercise: "Completed", calories_kcal: "2100" });
+  await pressSave(app);
+  assert.ok(!isOpen(app));
+  assert.deepEqual(sent(app), [{ exercise: "Completed", calories_kcal: 2100 }]);
+  assert.equal(app.requests[0].url, "/api/months/2026/10/days/5");
+  // The saved day is shown, the window has not moved, and focus is back on that day's Edit.
+  assert.deepEqual(shownDays(app), span(3));
+  assert.deepEqual(rowText(app, "2026-10-05").slice(0, 5), ["Mon 05 Oct", "Completed", "Not entered", "-", "2,100"]);
+  assert.ok(app.document.activeElement === editButton(app, "2026-10-05"));
+  // Edit today works from any window, and leaves the window where it is.
+  todayButton(app)[0].fire("click");
+  assert.equal(el(app, "edit-date").textContent, "Tuesday, 20 October 2026");
+  type(app, { protein_g: "120" });
+  await pressSave(app);
+  assert.equal(app.requests[1].url, "/api/months/2026/10/days/20");
+  assert.deepEqual(shownDays(app), span(3));
+  assert.ok(app.document.activeElement === todayButton(app)[0]);
+  // What is being typed survives the window being read again by a refresh.
+  openDay(app, "2026-10-04");
+  type(app, { cardio: "12:34" });
+  await app.save();
+  assert.ok(isOpen(app));
+  assert.equal(field(app, "cardio").value, "12:34");
+});
+
+// ---------------------------------------------------------------- deleting a month
+
+const deleteOptions = (app) => el(app, "delete-select").children.map((option) => [option.value, option.textContent]);
+const deleteOpen = (app) => el(app, "delete-dialog").open === true;
+async function pressDelete(app) {
+  el(app, "delete-form").fire("submit", { preventDefault() {} });
+  await settle();
+}
+
+test("Delete Month asks first, names the month, and deletes only on the second press", async () => {
+  const app = await boot({ editing: true });                    // October (on screen) and November
+  el(app, "delete-month").fire("click");
+  assert.ok(deleteOpen(app));
+  assert.deepEqual(deleteOptions(app), [["2026-10", "October 2026"], ["2026-11", "November 2026"]]);
+  assert.equal(el(app, "delete-select").value, "2026-10");      // it opens on the month on screen
+  assert.equal(el(app, "delete-submit").textContent, "Delete Month");
+  assert.equal(el(app, "delete-confirm").hidden, true);
+  assert.equal(el(app, "delete-hint").textContent, "Choosing a month here deletes nothing. You are asked to confirm first.");
+
+  // Choosing another month in the dropdown sends nothing.
+  el(app, "delete-select").value = "2026-11";
+  el(app, "delete-select").fire("change");
+  await settle();
+  assert.equal(app.requests.length, 0);
+
+  // The first press only asks, and says which month would go.
+  await pressDelete(app);
+  assert.equal(app.requests.length, 0);
+  assert.ok(deleteOpen(app));
+  assert.equal(el(app, "delete-confirm").hidden, false);
+  assert.match(el(app, "delete-confirm").textContent, /^Delete November 2026\? Its sheet is removed from Fitness_Tracker\.xlsx/);
+  assert.match(el(app, "delete-confirm").textContent, /This cannot be undone\.$/);
+  assert.equal(el(app, "delete-submit").textContent, "Delete November 2026");
+  assert.equal(el(app, "delete-select").disabled, true);        // the month cannot change under the question
+  assert.ok(app.document.activeElement === el(app, "delete-cancel"));   // the keyboard rests on the safe button
+
+  // Cancel closes the dialog and nothing was sent; opening it again starts from the beginning.
+  el(app, "delete-cancel").fire("click");
+  assert.ok(!deleteOpen(app));
+  assert.equal(app.requests.length, 0);
+  assert.deepEqual(app.server.months.map((month) => month.label), ["October 2026", "November 2026"]);
+  el(app, "delete-month").fire("click");
+  assert.equal(el(app, "delete-confirm").hidden, true);
+  assert.equal(el(app, "delete-select").disabled, false);
+  assert.equal(el(app, "delete-submit").textContent, "Delete Month");
+
+  // The second press deletes: one request, naming the month.
+  el(app, "delete-select").value = "2026-11";
+  await pressDelete(app);
+  await pressDelete(app);
+  assert.equal(app.requests.length, 1);
+  assert.equal(app.requests[0].method, "DELETE");
+  assert.equal(app.requests[0].url, "/api/months/2026/11");
+  assert.equal(app.requests[0].headers["Content-Type"], "application/json");
+  assert.deepEqual(JSON.parse(app.requests[0].body), { confirm: "November 2026" });
+  assert.ok(!deleteOpen(app));
+  // The month has gone from the selector; the month on screen was another one and is still there.
+  assert.deepEqual(el(app, "month-select").children.map((option) => option.textContent), ["October 2026"]);
+  assert.equal(app.title.textContent, "October 2026");
+  assert.equal(app.notice.hidden, true);
+});
+
+test("deleting the month on screen moves the page to a month that is still there", async () => {
+  const app = await boot();                                     // October, November, December 2026 and January 2027
+  await app.select("2026-12");
+  assert.equal(app.title.textContent, "December 2026");
+  el(app, "delete-month").fire("click");
+  assert.equal(el(app, "delete-select").value, "2026-12");
+  await pressDelete(app);
+  await pressDelete(app);
+  assert.deepEqual(app.requests.map((request) => `${request.method} ${request.url}`), ["DELETE /api/months/2026/12"]);
+  assert.deepEqual(el(app, "month-select").children.map((option) => option.textContent),
+    ["October 2026", "November 2026", "January 2027"]);
+  // Nothing on the page points at the deleted sheet any more.
+  assert.notEqual(app.title.textContent, "December 2026");
+  const shown = el(app, "month-select").children.find((option) => option.selected);
+  assert.equal(app.title.textContent, shown.textContent);
+  assert.ok(el(app, "days-body").children.every((row) => !row.dataset.date.startsWith("2026-12")));
+  assert.equal(el(app, "days-body").children.length, 5);
+  assert.equal(app.notice.hidden, true);
+  assert.equal(app.errors.length, 0);
+  // A refresh afterwards asks only for months that exist.
+  app.calls.length = 0;
+  await app.save();
+  assert.ok(app.calls.every((url) => !url.includes("/2026/12")), app.calls.join(" "));
+});
+
+test("the only month cannot be deleted, and the dialog says why", async () => {
+  const app = await boot({ editing: true });
+  app.server.months = app.server.months.slice(0, 1);            // October alone
+  await app.save();
+  el(app, "delete-month").fire("click");
+  assert.ok(deleteOpen(app));
+  assert.equal(el(app, "delete-submit").disabled, true);
+  assert.equal(el(app, "delete-select").disabled, true);
+  assert.equal(el(app, "delete-hint").textContent,
+    "This is the only month in the workbook, so it cannot be deleted. Add another month first.");
+  await pressDelete(app);                                       // even if the form is sent some other way
+  await pressDelete(app);
+  assert.equal(app.requests.length, 0);
+  assert.equal(el(app, "delete-confirm").hidden, true);
+});
+
+test("a refused deletion is explained in the dialog and changes nothing", async () => {
+  const app = await boot({ editing: true });
+  app.server.reply = { status: 423, body: { error: { code: "workbook_locked", message: "The workbook is open in Excel. Close it and try again." } } };
+  el(app, "delete-month").fire("click");
+  el(app, "delete-select").value = "2026-11";
+  await pressDelete(app);
+  await pressDelete(app);
+  assert.equal(app.requests.length, 1);
+  assert.ok(deleteOpen(app));                                   // it stays open, with the reason
+  assert.equal(el(app, "delete-error").hidden, false);
+  assert.equal(el(app, "delete-error").textContent, "The workbook is open in Excel. Close it and try again.");
+  assert.equal(el(app, "delete-submit").disabled, false);       // and can be pressed again once Excel has closed it
+  assert.deepEqual(el(app, "month-select").children.map((option) => option.textContent), ["October 2026", "November 2026"]);
+  assert.equal(app.title.textContent, "October 2026");
+  // Once the workbook is free, the same press goes through.
+  app.server.reply = null;
+  await pressDelete(app);
+  assert.equal(app.requests.length, 2);
+  assert.ok(!deleteOpen(app));
+  assert.deepEqual(el(app, "month-select").children.map((option) => option.textContent), ["October 2026"]);
 });

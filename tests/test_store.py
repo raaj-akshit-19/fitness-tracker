@@ -300,8 +300,8 @@ class MigrationRemovedTests(unittest.TestCase):
         writers = [name for name in vars(st.TrackerStore)
                    if not name.startswith("_")
                    and name not in ("status", "list_months", "get_month")]
-        # The only things that write: editing one row, and adding a month.
-        self.assertEqual(writers, ["update_day", "update_measurements", "create_month"])
+        # The only things that write: editing one row, adding a month, and deleting one that was asked for.
+        self.assertEqual(writers, ["update_day", "update_measurements", "create_month", "delete_month"])
 
 
 class MonthIsolationTests(TempWorkbookCase):

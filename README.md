@@ -45,11 +45,16 @@ an Excel workbook beside the program. Nothing is sent anywhere.
    window opens and stays open.
 2. Your browser opens the dashboard by itself.
 3. Press "Edit today", or Edit on any day, fill in what you did, and press
-   Save. Cancel or Escape throws the changes away.
+   Save. Cancel or Escape throws the changes away. The daily tracker shows
+   five days at a time, with today in the middle; Earlier and Later move to
+   the days before and after.
 4. Use Edit on a Sunday to enter body measurements.
 5. Use Select Month to look at a different month.
 6. Use "+ Add New Month" to create a month.
-7. When you are finished, close that window. That stops the tracker.
+7. Use "Delete Month" to remove one. You choose the month and are asked to
+   confirm first. Its sheet is removed from the workbook with everything
+   entered in it, which cannot be undone. The last month cannot be deleted.
+8. When you are finished, close that window. That stops the tracker.
 
 What each entry is:
 
@@ -188,6 +193,7 @@ it, and a workbook already in the release folder is left exactly as it is.
 | GET | `/api/months/<year>/<month>` | Daily rows and Sunday measurements for one month |
 | GET | `/api/months/<year>/<month>/analytics` | Analytics for that one month |
 | POST | `/api/months` | Create a month. Body: `{"year": 2026, "month": 11}` |
+| DELETE | `/api/months/<year>/<month>` | Delete a month's sheet. Body names it: `{"confirm": "November 2026"}` |
 | PUT | `/api/months/<year>/<month>/days/<day>` | Save one day's fields |
 | PUT | `/api/months/<year>/<month>/measurements/<day>` | Save one Sunday's measurements |
 
@@ -201,6 +207,7 @@ Errors come back as `{"error": {"code": "...", "message": "..."}}`, with a
 | `month_not_found` | No sheet for that month |
 | `day_not_found` | No such day, a day in the future, or not a Sunday |
 | `month_exists` | That month already has a sheet |
+| `last_month` | It is the only month in the workbook, so it cannot be deleted |
 | `workbook_locked` | The workbook is open in Excel or locked |
 | `workbook_missing` | Fitness_Tracker.xlsx is not there |
 | `workbook_unreadable` | The file is not a readable workbook |

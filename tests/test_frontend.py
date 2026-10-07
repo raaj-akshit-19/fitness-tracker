@@ -63,14 +63,23 @@ class FrontendSourceTests(unittest.TestCase):
 
     def test_only_writes_are_month_creation_and_the_day_editor(self):
         script = " ".join(self.sources[name] for name in FILES if name.endswith(".js"))
-        # One POST (Add New Month, in app.js) and one PUT (Save in either editor, in editor.js).
-        self.assertEqual(re.findall(r'method:\s*"(\w+)"', script), ["POST", "PUT"])
+        # One POST (Add New Month) and one DELETE (Delete Month, after it is confirmed), both in
+        # app.js, and one PUT (Save in either editor, in editor.js).
+        self.assertEqual(re.findall(r'method:\s*"(\w+)"', script), ["POST", "DELETE", "PUT"])
+        # The DELETE is sent from one place only: the second press in the Delete Month dialog.
+        app = self.sources["app.js"]
+        self.assertEqual(app.count('method: "DELETE"'), 1)
+        submit = app[app.index('els.deleteForm.addEventListener("submit"'):app.index('document.addEventListener("visibilitychange"')]
+        self.assertIn('method: "DELETE"', submit)
+        self.assertLess(submit.index("if (state.deleting === null) {"), submit.index('method: "DELETE"'))
+        self.assertIn("body: JSON.stringify({ confirm: gone.label })", submit)
+        self.assertNotIn("deleteSelect.addEventListener", app)             # choosing in the dropdown does nothing by itself
         self.assertEqual(re.findall(r'api\("(/api/[a-z]+)", \{\s*method: "POST"', self.sources["app.js"]),
                          ["/api/months"])
         self.assertEqual(re.findall(r'method:\s*"(\w+)"', self.sources["editor.js"]), ["PUT"])
         self.assertEqual(script.count("fetch("), 1)          # everything goes through api()
         self.assertNotIn("PATCH", script)
-        self.assertNotIn("DELETE", script)
+        self.assertEqual(script.count('"DELETE"'), 1)        # the one above, and no other
         page = self.sources["index.html"]
         self.assertNotIn('type="checkbox"', page)
         self.assertNotIn("contenteditable", page)
@@ -213,7 +222,8 @@ class FrontendSourceTests(unittest.TestCase):
         self.assertIn('<p id="saved-note" class="saved-note" role="status" hidden></p>', page)
         # The only things to press outside the editors: the month selector and Add New Month.
         outside = re.sub(r"<dialog.*?</dialog>", "", page, flags=re.S)
-        self.assertEqual(re.findall(r'<button id="([a-z-]+)"', outside), ["add-month"])
+        self.assertEqual(re.findall(r'<button id="([a-z-]+)"', outside),
+                         ["add-month", "delete-month", "days-earlier", "days-later"])
         self.assertEqual(re.findall(r'<select id="([a-z-]+)"', outside), ["month-select"])
         # The page does not branch on what kind of month it has: there is one path through it.
         scripts = " ".join(self.sources[name] for name in FILES if name.endswith(".js"))
@@ -226,7 +236,7 @@ class FrontendSourceTests(unittest.TestCase):
         # The daily table still scrolls inside its own box; the page does not.
         self.assertRegex(page, r'<div class="table-scroll">\s*<table id="days-table"[^>]*>')
         self.assertEqual(page.count("<dialog"), page.count("</dialog>"))
-        self.assertEqual(page.count("<dialog"), 3)      # Add New Month, a day, a Sunday's measurements
+        self.assertEqual(page.count("<dialog"), 4)      # Add New Month, Delete Month, a day, a Sunday's measurements
         self.assertEqual(page.count('class="edit-fields"'), 2)     # both editors use the one layout
         # On a phone a dialog is a sheet across the bottom of the window: as wide as the window,
         # one field to a line, Cancel and Save sharing the width.
@@ -281,8 +291,44 @@ class FrontendSourceTests(unittest.TestCase):
         css = self.sources["styles.css"]
         return css[:css.index("@media (min-width:")]
 
-    def test_motion_is_short_and_never_endless(self):
+    def ambient(self):
+        """The stylesheet's one part that never stops: the light behind the page. (all of it, the rest)"""
         css = self.sources["styles.css"]
+        begin, end = css.index("/* ambient light: begin */"), css.index("/* ambient light: end */")
+        return css[begin:end], css[:begin] + css[end:]
+
+    def test_the_light_behind_the_page_moves_slowly_and_nothing_else_does(self):
+        ambient, rest = self.ambient()
+        # Two layers behind everything, out of the layout and out of reach of a click.
+        layers = self.css_block("body::before,\nbody::after {")
+        for needed in ("position: fixed;", "z-index: -1;", "pointer-events: none;", "inset: -18%;"):
+            self.assertIn(needed, layers, needed)
+        # They are the only things animated without end, and slowly.
+        self.assertEqual(re.findall(r"(body::\w+) \{[^}]*animation: (\w+) (\d+)s ease-in-out infinite;", ambient),
+                         [("body::before", "drift", "36"), ("body::after", "wander", "28")])
+        self.assertEqual(ambient.count("infinite"), 2)
+        self.assertEqual(ambient.count("animation:"), 2)
+        self.assertEqual(re.findall(r"@keyframes ([a-z-]+)", ambient), ["drift", "wander"])
+        for seconds in re.findall(r"(\d+)s ease-in-out", ambient):
+            self.assertTrue(20 <= int(seconds) <= 40, seconds)
+        self.assertNotIn("infinite", rest)
+        # Only where a layer is and how strong it is: cheap to draw, and never a colour outside the palette.
+        for name in ("drift", "wander"):
+            block = self.css_block(f"@keyframes {name} ")
+            properties = set(re.findall(r"\n\s+([a-z-]+): ", block))
+            self.assertLessEqual(properties, {"transform", "opacity"}, name)
+            for shift in re.findall(r"translate3d\((-?\d+)%?, (-?\d+)%?, 0\)", block):
+                self.assertTrue(all(abs(int(part)) <= 12 for part in shift), shift)      # well inside the 18% to spare
+        self.assertGreaterEqual(min(float(v) for v in re.findall(r"opacity: ([\d.]+);", ambient)), 0.5)   # it never goes out
+        # Nothing of the page itself is named in it: only the two layers and their keyframes.
+        selectors = re.findall(r"^([^\s/][^{\n]*) \{$", ambient, re.M) + re.findall(r"^([^\s/{}][^{\n]*),$", ambient, re.M)
+        self.assertEqual(set(selectors), {"body::before", "body::after", "@keyframes drift", "@keyframes wander"})
+        # Someone who has asked for less motion gets the same light, standing still.
+        still = self.css_block("@media (prefers-reduced-motion: reduce)")
+        self.assertRegex(still, r"\*::before,\s*\*::after,[^{]*\{\s*animation: none !important;")
+
+    def test_motion_is_short_and_never_endless(self):
+        _, css = self.ambient()            # everything but the light behind the page
         # Every duration and delay is written in milliseconds and is brief.
         times = [int(value) for value in re.findall(r"\b(\d+)ms\b", css)]
         self.assertGreater(len(times), 10)
@@ -344,10 +390,11 @@ class FrontendSourceTests(unittest.TestCase):
             self.assertNotIn(word, css, word)
         # Gradients are atmosphere, not the design: the glow fixed behind the page (two soft
         # patches in one rule, which takes no clicks) and the one sheen that glass surfaces share.
-        self.assertEqual(css.count("radial-gradient("), 2)
+        self.assertEqual(css.count("radial-gradient("), 3)
         self.assertEqual(css.count("linear-gradient("), 1)
-        glow = self.css_block("body::before {")
-        self.assertEqual(glow.count("radial-gradient("), 2)
+        glow = self.css_block("body::before,\nbody::after {") + self.css_block("body::before {\n  background") \
+            + self.css_block("body::after {\n  opacity")
+        self.assertEqual(glow.count("radial-gradient("), 3)
         for needed in ("position: fixed;", "z-index: -1;", "pointer-events: none;"):
             self.assertIn(needed, glow)
         self.assertIn("--sheen: linear-gradient(", self.css_block(":root {"))
@@ -402,7 +449,7 @@ class FrontendSourceTests(unittest.TestCase):
     def test_today_and_the_month_bar_are_in_the_page(self):
         page = self.sources["index.html"]
         toolbar = re.search(r'<div class="toolbar">(.*?)</div>', page, re.S).group(1)
-        self.assertEqual(re.findall(r"<(h2|label|select|button)[ >]", toolbar), ["h2", "label", "select", "button"])
+        self.assertEqual(re.findall(r"<(h2|label|select|button)[ >]", toolbar), ["h2", "label", "select", "button", "button"])
         self.assertIn('<h2 id="month-title"></h2>', toolbar)
         self.assertIn('<label for="month-select">Select Month</label>', toolbar)
         bar = re.search(r'<div id="month-bar" class="month-bar">(.*?)</nav>\s*</div>', page, re.S).group(1)
@@ -531,7 +578,9 @@ class FrontendSourceTests(unittest.TestCase):
     def test_every_dropdown_draws_the_same_dark_list(self):
         css, page = self.sources["styles.css"], self.sources["index.html"]
         # Every dropdown on the page, and they are all real selects of the page's own.
-        self.assertEqual(re.findall(r'<select id="([a-z-]+)"', page), ["month-select", "new-month", "edit-exercise", "edit-junk-food"])
+        self.assertEqual(re.findall(r'<select id="([a-z-]+)"', page),
+                         ["month-select", "new-month", "delete-select", "edit-exercise", "edit-junk-food"])
+        self.assertNotIn("#delete-select", css)                 # the new dropdown has no style of its own: it shares the one set
         for name in ("app.js", "editor.js", "analytics.js", "format.js"):
             self.assertNotIn('"select"', self.sources[name], name)              # no dropdown is made by a script
         self.assertNotIn("listbox", page + self.sources["app.js"] + self.sources["editor.js"])
@@ -578,6 +627,54 @@ class FrontendSourceTests(unittest.TestCase):
                 self.assertNotIn(word, block, word)
         for script in ("app.js", "editor.js"):
             self.assertNotIn('"past"', self.sources[script], script)       # nothing else knows about it
+
+    def test_the_daily_tracker_draws_five_days_and_moves_by_five(self):
+        app, page, css = self.sources["app.js"], self.sources["index.html"], self.sources["styles.css"]
+        self.assertIn("const WINDOW_DAYS = 5;", app)
+        # The rule, as given: start at today less two, no earlier than the 1st, no later than five from the end.
+        window = app[app.index("function dayWindow("):app.index("function moveDays(")]
+        self.assertIn("const last = Math.max(count - WINDOW_DAYS + 1, 1);", window)
+        self.assertIn("const within = (start) => Math.min(Math.max(start, 1), last);", window)
+        self.assertIn("const home = within(around - 2);", window)
+        self.assertIn("within(home + shift * WINDOW_DAYS)", window)
+        self.assertNotRegex(window, r"\b(28|29|30|31|October)\b")           # no month is written into it
+        # Only the window is drawn; the month in hand keeps every day, and nothing is fetched or sent to move.
+        self.assertIn("const visible = data.days.slice(shown.start - 1, shown.start - 1 + WINDOW_DAYS);", app)
+        self.assertIn("els.daysBody.replaceChildren(...visible.map((day) => {", app)
+        move = app[app.index("function moveDays("):app.index("function monthMarks(")]
+        for word in ("api(", "fetch(", "state.data.days =", "renderMonth("):
+            self.assertNotIn(word, move, word)
+        self.assertIn("renderDays(state.data, state.shownToday);", move)      # the rows, and nothing else on the page
+        rows = app[app.index("function renderDays("):app.index("// today is the backend's date")]
+        for other in ("renderToday(", "measurementsBody", "analyticsBody", "els.title"):
+            self.assertNotIn(other, rows, other)
+        self.assertIn("if (entering) state.windowShift = 0;", app)
+        # Two small buttons of the kind the page already has, and a line saying which days are shown.
+        nav = page[page.index('<div class="days-nav">'):page.index('<div class="table-scroll">')]
+        self.assertEqual(re.findall(r'<button id="([a-z-]+)" type="button" class="secondary small"', nav), ["days-earlier", "days-later"])
+        self.assertIn('<p id="days-range" class="days-range" role="status"></p>', nav)
+        self.assertLess(page.index('id="saved-note"'), page.index('class="days-nav"'))
+        self.assertLess(page.index('class="days-nav"'), page.index('id="days-table"'))
+        self.assertIn("display: flex;", self.css_block(".days-nav {"))
+
+    def test_delete_month_is_a_dialog_like_add_new_month(self):
+        page, css, app = self.sources["index.html"], self.sources["styles.css"], self.sources["app.js"]
+        dialog = page[page.index('<dialog id="delete-dialog"'):page.index('<dialog id="edit-dialog"')]
+        for piece in ('<h2 id="delete-title">Delete Month</h2>', '<label for="delete-select">Month</label>',
+                      '<select id="delete-select"></select>', '<p id="delete-confirm" class="notice" role="alert" hidden></p>',
+                      '<p id="delete-error" class="notice" role="alert" hidden></p>',
+                      '<button id="delete-cancel" type="button" class="secondary">Cancel</button>',
+                      '<button id="delete-submit" type="submit">Delete Month</button>'):
+            self.assertIn(piece, dialog, piece)
+        # Its button sits beside Add New Month and is drawn by the same rules.
+        self.assertRegex(page, r'id="add-month"[^\n]*\n\s*<button id="delete-month" type="button" class="secondary" title="Delete Month">')
+        self.assertEqual(css.count("#add-month,\n#delete-month {"), 1)
+        self.assertEqual(css.count("  #add-month,\n  #delete-month {"), 1)
+        self.assertNotIn("#delete-dialog", css)
+        # The words that matter are said: which month, that it cannot be undone, and why the last one stays.
+        self.assertIn("This cannot be undone.", app)
+        self.assertIn("This is the only month in the workbook, so it cannot be deleted. Add another month first.", app)
+        self.assertIn("els.deleteSubmit.textContent = month ? `Delete ${month.label}` : \"Delete Month\";", app)
 
     def test_the_page_is_dark_with_one_accent_and_text_that_can_be_read(self):
         css, page = self.sources["styles.css"], self.sources["index.html"]

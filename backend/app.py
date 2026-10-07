@@ -14,7 +14,7 @@ from werkzeug.exceptions import HTTPException
 from backend import store as st
 from backend.analytics import month_analytics
 from backend.paths import RESOURCE_DIR
-from backend.workbook import WORKBOOK_PATH
+from backend.workbook import WORKBOOK_PATH, sheet_name
 
 FRONTEND_DIR = RESOURCE_DIR / "frontend"
 
@@ -28,6 +28,7 @@ STATUS_CODES = {
     "month_not_found": 404,
     "day_not_found": 404,
     "month_exists": 409,
+    "last_month": 409,
     "workbook_locked": 423,
     "workbook_missing": 500,
     "workbook_unreadable": 500,
@@ -129,6 +130,18 @@ def create_app(workbook_path=WORKBOOK_PATH, today=date.today):
                 "invalid_request", 'Send JSON with "year" and "month".', 400
             )
         return jsonify(store.create_month(body["year"], body["month"])), 201
+
+    @app.delete("/api/months/<int:year>/<int:month>")
+    def delete_month(year, month):
+        # Deleting a month cannot be undone, so the request has to name the
+        # month it means, the way the page does after the user has confirmed.
+        body = request.get_json(silent=True)
+        name = sheet_name(year, month) if 1 <= month <= 12 else None
+        if name is not None and (not isinstance(body, dict) or body.get("confirm") != name):
+            return _error(
+                "invalid_request", f'Send JSON with "confirm" set to "{name}" to delete that month.', 400
+            )
+        return jsonify(store.delete_month(year, month))
 
     return app
 

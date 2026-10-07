@@ -46,12 +46,17 @@ const FIGURE_KEYS = ["section", "habit", "stat", "week", "measure", "field", "da
 const MEASUREMENT_COLUMNS = [["Sunday"], ["Weight (kg)", "num"], ["Waist (cm)", "num"], ["Chest (cm)", "num"],
   ["Bicep (cm)", "num"], ["Thigh (cm)", "num"], ["Forearm (cm)", "num"], ["Edit", "action"]];
 const SAVED_NOTE_MS = 8000;
+// The daily tracker shows this many days at a time: today with two days on
+// either side, or the nearest five to that at either end of the month.
+const WINDOW_DAYS = 5;
+const DELETE_HINT = "Choosing a month here deletes nothing. You are asked to confirm first.";
 
 const $ = (id) => document.getElementById(id);
 const els = {
   status: $("workbook-status"),
   select: $("month-select"),
   addButton: $("add-month"),
+  deleteButton: $("delete-month"),
   notice: $("notice"),
   empty: $("empty"),
   view: $("month-view"),
@@ -67,6 +72,9 @@ const els = {
   daysTable: $("days-table"),
   daysHead: $("days-head"),
   daysBody: $("days-body"),
+  daysEarlier: $("days-earlier"),
+  daysLater: $("days-later"),
+  daysRange: $("days-range"),
   issues: $("issues"),
   issuesList: $("issues-list"),
   measureSavedNote: $("measure-saved-note"),
@@ -81,6 +89,14 @@ const els = {
   addError: $("add-error"),
   addSubmit: $("add-submit"),
   addCancel: $("add-cancel"),
+  deleteDialog: $("delete-dialog"),
+  deleteForm: $("delete-form"),
+  deleteSelect: $("delete-select"),
+  deleteHint: $("delete-hint"),
+  deleteConfirm: $("delete-confirm"),
+  deleteError: $("delete-error"),
+  deleteSubmit: $("delete-submit"),
+  deleteCancel: $("delete-cancel"),
 };
 
 const state = {
@@ -99,6 +115,8 @@ const state = {
   currentLink: null,    // the section link the window is on
   modified: null,   // workbook_modified of the data currently on screen
   day: null,        // calendar day the analytics on screen were worked out for
+  windowShift: 0,   // how many windows of days the tracker has been moved, earlier (-) or later (+)
+  deleting: null,   // the month the user has been asked to confirm deleting
   loadId: 0,
 };
 
@@ -296,28 +314,65 @@ function renderToday(data, today, unreadable) {
   els.todayStrip.hidden = false;
 }
 
-// today is the backend's date, used only to point out today's row.
-function renderMonth(data, today) {
-  els.title.textContent = data.label;
+// Which days of the month the daily tracker shows: where the window starts
+// (a day of the month) and the furthest it can start. Left alone it holds
+// today with two days before and two after; near either end of the month it
+// stops at the end, so it is always the same number of days. In a month that
+// is over it rests on the last days, and in one still to come on the first.
+// shift moves it whole windows earlier or later.
+function dayWindow(days, today, shift) {
+  const count = days.length;
+  const last = Math.max(count - WINDOW_DAYS + 1, 1);
+  const within = (start) => Math.min(Math.max(start, 1), last);
+  const index = days.findIndex((day) => day.date === today);
+  const around = index !== -1 ? index + 1 : (Boolean(today) && count > 0 && today > days[count - 1].date ? count : 1);
+  const home = within(around - 2);
+  return { start: within(home + shift * WINDOW_DAYS), last };
+}
+
+// Move the window one step earlier (-1) or later (+1), and show it. Nothing
+// is fetched or saved, and nothing else on the page is touched: only the rows
+// of the daily tracker are drawn again, from the month in hand.
+function moveDays(step) {
+  if (!state.data) return;
+  const now = dayWindow(state.data.days, state.shownToday, state.windowShift);
+  const next = dayWindow(state.data.days, state.shownToday, state.windowShift + step);
+  if (next.start === now.start) return;
+  state.windowShift += step;
+  renderDays(state.data, state.shownToday);
+}
+
+// What a month's unreadable cells mean for drawing it: which cells they are,
+// and whether a day, or a Sunday, has not come yet and has nothing in it.
+function monthMarks(data, today) {
   const unreadable = new Set(data.issues.map((issue) => `${issue.date} ${issue.field}`));
   const flagged = new Set(data.issues.map((issue) => issue.date));
-  // A day, or a Sunday, that has not come yet and has nothing in it.
   const stillBlank = (date, record, fields) => Boolean(today) && date > today
     && !flagged.has(date) && fields.every((field) => record[field] === null);
-  state.data = data;
-  state.shownToday = today;
+  return { unreadable, stillBlank };
+}
+
+// The rows of the daily tracker: the days of the window, and which days those are.
+function renderDays(data, today) {
+  const { unreadable, stillBlank } = monthMarks(data, today);
   state.editButtons = {};
-  state.measureButtons = {};
-  els.barMonth.textContent = data.label;
-  renderToday(data, today, unreadable);
+  // Only the days of the window are drawn. Every day stays in the month in
+  // hand, and in the workbook, whether it is on screen or not.
+  const shown = dayWindow(data.days, today, state.windowShift);
+  const visible = data.days.slice(shown.start - 1, shown.start - 1 + WINDOW_DAYS);
+  els.daysEarlier.disabled = shown.start <= 1;
+  els.daysLater.disabled = shown.start >= shown.last;
+  if (visible.length > 0) {
+    const from = dayFormat.format(parseDay(visible[0].date));
+    const to = dayFormat.format(parseDay(visible[visible.length - 1].date));
+    // Short enough for one line on the narrowest phone: "18 to 22 Oct". A window never leaves its month.
+    const [, lastDay, monthName] = to.split(" ");
+    els.daysRange.textContent = `${Number(from.split(" ")[1])} to ${Number(lastDay)} ${monthName}`;
+    els.daysEarlier.setAttribute("aria-label", `Earlier days, before ${from}`);
+    els.daysLater.setAttribute("aria-label", `Later days, after ${to}`);
+  }
 
-  els.daysHead.replaceChildren(...DAY_COLUMNS.map(([heading, className]) => {
-    const th = make("th", { text: heading, attrs: { scope: "col" } });
-    if (className) th.className = className;
-    return th;
-  }));
-
-  els.daysBody.replaceChildren(...data.days.map((day) => {
+  els.daysBody.replaceChildren(...visible.map((day) => {
     const date = parseDay(day.date);
     const tr = document.createElement("tr");
     tr.dataset.date = day.date;
@@ -338,6 +393,24 @@ function renderMonth(data, today) {
     tr.append(dateCell, ...cells);
     return tr;
   }));
+}
+
+// today is the backend's date, used only to point out today's row.
+function renderMonth(data, today) {
+  els.title.textContent = data.label;
+  const { unreadable, stillBlank } = monthMarks(data, today);
+  state.data = data;
+  state.shownToday = today;
+  state.measureButtons = {};
+  els.barMonth.textContent = data.label;
+  renderToday(data, today, unreadable);
+
+  els.daysHead.replaceChildren(...DAY_COLUMNS.map(([heading, className]) => {
+    const th = make("th", { text: heading, attrs: { scope: "col" } });
+    if (className) th.className = className;
+    return th;
+  }));
+  renderDays(data, today);
 
   // The measurement table has a row for each Sunday and for no other day, so
   // only a Sunday can be given to the measurement editor.
@@ -622,6 +695,8 @@ async function reload(preferred) {
     // what was typed into it.
     const entering = !sameMonth(state.shown, { year, month });
     const before = entering ? null : figureTexts(els.view);
+    // Another month starts from its own days; the same month read again stays where the user left it.
+    if (entering) state.windowShift = 0;
     renderMonth(data, analytics.month.today);
     els.analyticsBody.replaceChildren(...sections);
     state.analytics = analytics;
@@ -737,6 +812,80 @@ els.form.addEventListener("submit", async (event) => {
     els.addError.hidden = false;
   } finally {
     els.addSubmit.disabled = false;
+  }
+});
+
+els.daysEarlier.addEventListener("click", () => moveDays(-1));
+els.daysLater.addEventListener("click", () => moveDays(1));
+
+// ---------------------------------------------------------------- deleting a month
+
+// The dialog has two steps. First a month is chosen, which deletes nothing.
+// Then the dialog says which month would go and waits for the button that
+// names it. Cancel, Escape and closing the dialog leave the workbook alone.
+function showDeleteStep(month) {
+  const only = state.months.length <= 1;
+  state.deleting = month;
+  els.deleteSelect.disabled = only || month !== null;
+  els.deleteSubmit.disabled = only;
+  els.deleteSubmit.textContent = month ? `Delete ${month.label}` : "Delete Month";
+  els.deleteHint.textContent = only
+    ? "This is the only month in the workbook, so it cannot be deleted. Add another month first."
+    : DELETE_HINT;
+  els.deleteHint.hidden = month !== null;
+  els.deleteConfirm.textContent = month
+    ? `Delete ${month.label}? Its sheet is removed from Fitness_Tracker.xlsx with everything entered in it: `
+      + "every day and every Sunday's measurements. This cannot be undone."
+    : "";
+  els.deleteConfirm.hidden = month === null;
+}
+
+els.deleteButton.addEventListener("click", () => {
+  els.deleteSelect.replaceChildren(...state.months.map((month) => {
+    const option = document.createElement("option");
+    option.value = `${month.year}-${month.month}`;
+    option.textContent = month.label;
+    return option;
+  }));
+  // It opens on the month on screen. That only fills in the dropdown: nothing is deleted by it.
+  const first = state.months.find((month) => sameMonth(month, state.shown)) || state.months[0];
+  if (first) els.deleteSelect.value = `${first.year}-${first.month}`;
+  els.deleteError.hidden = true;
+  showDeleteStep(null);
+  els.deleteDialog.showModal();
+});
+
+els.deleteCancel.addEventListener("click", () => els.deleteDialog.close());
+
+els.deleteForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  els.deleteError.hidden = true;
+  if (state.months.length <= 1) return;
+  if (state.deleting === null) {
+    // The first press only asks. Cancel is where the keyboard lands.
+    const [year, month] = els.deleteSelect.value.split("-").map(Number);
+    const chosen = state.months.find((entry) => sameMonth(entry, { year, month }));
+    if (!chosen) return;
+    showDeleteStep(chosen);
+    focusButton(els.deleteCancel);
+    return;
+  }
+  const gone = state.deleting;
+  els.deleteSubmit.disabled = true;
+  try {
+    await api(`/api/months/${gone.year}/${gone.month}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: gone.label }),
+    });
+    els.deleteDialog.close();
+    // If the month on screen is the one that went, the page moves to one that is still there.
+    if (sameMonth(state.selected, gone)) state.selected = null;
+    await reload();
+  } catch (error) {
+    els.deleteError.textContent = error.message;
+    els.deleteError.hidden = false;
+    els.deleteSubmit.disabled = false;
   }
 });
 

@@ -5,11 +5,17 @@ FITNESS TRACKER
 3. Enter your day on the dashboard. Press "Edit today", or Edit on any day's
    row, fill in what you did, and press Save. Each Sunday has its own Edit
    for body measurements. Days in the future cannot be edited yet.
+   The daily tracker shows five days at a time, with today in the middle.
+   Earlier and Later move to the days before and after.
 4. Save writes the change into Fitness_Tracker.xlsx. Nothing is written until
    you press Save, and Cancel throws your changes away.
 5. Use Select Month on the dashboard to look at another month.
 6. Use "+ Add New Month" to create a month.
-7. When you are finished, close the Fitness Tracker window. That stops it.
+7. Use "Delete Month" to remove a month you no longer want. You choose the
+   month, and you are asked to confirm before anything is removed. Its sheet
+   goes from Fitness_Tracker.xlsx with everything entered in it, and this
+   cannot be undone. The last month left cannot be deleted.
+8. When you are finished, close the Fitness Tracker window. That stops it.
 
 Keep Fitness_Tracker.xlsx in the same folder as Fitness Tracker.exe.
 You can move the folder anywhere, as long as the two stay together.

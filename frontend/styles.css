@@ -52,6 +52,7 @@
      at the opposite foot. Faint enough to be felt rather than seen. */
   --glow-warm: rgba(255, 95, 31, 0.06);
   --glow-ember: rgba(179, 66, 21, 0.06);
+  --glow-drift: rgba(255, 95, 31, 0.045);
 
   /* One accent, kept for what matters: the main action, where you are, today,
      and what is done. */
@@ -115,17 +116,71 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
-/* The glow sits behind everything and stays put while the page scrolls. */
-body::before {
+/* ambient light: begin */
+
+/* The glow sits behind everything and stays put while the page scrolls. It is
+   two layers of soft light, each larger than the window so that drifting
+   never brings an edge into view. Neither takes part in the layout or takes
+   a click, and nothing in front of them moves: the glass surfaces only let
+   the light behind them show through. */
+body::before,
+body::after {
   content: "";
   position: fixed;
-  inset: 0;
+  inset: -18%;
   z-index: -1;
   pointer-events: none;
-  background:
-    radial-gradient(70% 46% at 8% 0%, var(--glow-warm), transparent 72%),
-    radial-gradient(70% 50% at 100% 100%, var(--glow-ember), transparent 74%);
 }
+
+/* The light is alive: each layer drifts a little way and back, very slowly,
+   and the second one brightens and dims as it goes. Only the two layers move,
+   and only on the compositor. For someone who has asked for less motion the
+   rule at the foot of this file stops every animation, these two included,
+   and the layers stay exactly where they are. */
+body::before {
+  background:
+    radial-gradient(51% 34% at 19% 13%, var(--glow-warm), transparent 72%),
+    radial-gradient(51% 37% at 87% 87%, var(--glow-ember), transparent 74%);
+  animation: drift 36s ease-in-out infinite;
+  will-change: transform;
+}
+
+body::after {
+  opacity: 0.8;
+  background: radial-gradient(34% 30% at 62% 44%, var(--glow-drift), transparent 70%);
+  animation: wander 28s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  33% {
+    transform: translate3d(6%, 4%, 0);
+  }
+
+  66% {
+    transform: translate3d(-4%, 7%, 0);
+  }
+}
+
+@keyframes wander {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: translate3d(-9%, 6%, 0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translate3d(10%, -8%, 0);
+  }
+}
+
+/* ambient light: end */
 
 h1,
 h2,
@@ -399,12 +454,39 @@ button.small {
   font-size: 13.5px;
 }
 
-#add-month {
+#add-month,
+#delete-month {
   flex: none;
   width: 50px;
   height: 50px;
   padding: 0;
   background: var(--surface);
+}
+
+/* On the narrowest phones a third control does not fit beside the month
+   without cutting its name short, so there Delete Month takes a line of its
+   own under the selector, with its name written out. */
+.toolbar {
+  flex-wrap: wrap;
+}
+
+#delete-month {
+  flex: 1 1 100%;
+  width: auto;
+  height: 44px;
+}
+
+#delete-month .add-plus {
+  margin-right: 6px;
+  font-size: 17px;
+}
+
+#delete-month .add-text {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
 }
 
 .add-plus {
@@ -751,6 +833,31 @@ select:focus-visible {
 }
 
 /* ---------------------------------------------------------------- days */
+
+/* The daily tracker shows five days at a time. This line says which, with a
+   button on either side to move to the days before and after. */
+.days-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+
+.days-nav button {
+  flex: none;
+}
+
+.days-range {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
 
 .table-scroll {
   overflow-x: auto;
@@ -1774,7 +1881,8 @@ dialog h2 {
   font-weight: 600;
 }
 
-#add-form .field:first-of-type {
+#add-form .field:first-of-type,
+#delete-form .field:first-of-type {
   margin-top: 16px;
 }
 
@@ -2016,6 +2124,31 @@ dialog[open]::backdrop {
 /* From here on the phone layout is given more room, a step at a time. */
 
 @media (min-width: 360px) {
+  /* From here there is room for both buttons beside the month. */
+  .toolbar {
+    flex-wrap: nowrap;
+  }
+
+  #delete-month {
+    flex: none;
+    width: 50px;
+    height: 50px;
+  }
+
+  #delete-month .add-plus {
+    margin-right: 0;
+    font-size: 24px;
+  }
+
+  #delete-month .add-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
   /* A day: the two statuses take half a line each, the four figures a quarter. */
   .stack-rows tbody tr {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2287,16 +2420,26 @@ dialog[open]::backdrop {
     letter-spacing: 0;
   }
 
-  #add-month {
+  #add-month,
+  #delete-month {
     width: auto;
     height: 42px;
     padding: 0 16px;
     background: transparent;
   }
 
-  .add-plus {
+  .add-plus,
+  #delete-month .add-plus {
     margin-right: 6px;
     font-size: 17px;
+  }
+
+  #delete-month .add-text {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
   }
 
   .month-bar {
