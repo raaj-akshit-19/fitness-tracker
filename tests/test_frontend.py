@@ -10,7 +10,8 @@ import unittest
 from pathlib import Path
 
 from backend import workbook as wbk
-from backend.app import FRONTEND_DIR, create_app
+from backend.app import FRONTEND_DIR
+from tests.support import workbook_app
 
 FILES = ["index.html", "styles.css", "format.js", "analytics.js", "app.js", "editor.js"]
 
@@ -20,7 +21,7 @@ class FrontendServingTests(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         path = wbk.create_workbook(self.tmp / "Fitness_Tracker.xlsx")
-        self.client = create_app(path).test_client()
+        self.client = workbook_app(path).test_client()
 
     def get(self, path):
         response = self.client.get(path)
@@ -63,9 +64,12 @@ class FrontendSourceTests(unittest.TestCase):
 
     def test_only_writes_are_month_creation_and_the_day_editor(self):
         script = " ".join(self.sources[name] for name in FILES if name.endswith(".js"))
-        # One POST (Add New Month) and one DELETE (Delete Month, after it is confirmed), both in
+        # Two POSTs for the account (signing in or up, and signing out), then the data: one
+        # POST (Add New Month) and one DELETE (Delete Month, after it is confirmed), all in
         # app.js, and one PUT (Save in either editor, in editor.js).
-        self.assertEqual(re.findall(r'method:\s*"(\w+)"', script), ["POST", "DELETE", "PUT"])
+        self.assertEqual(re.findall(r'method:\s*"(\w+)"', script), ["POST", "POST", "POST", "DELETE", "PUT"])
+        self.assertEqual(re.findall(r'api\(([^,]*/api/auth/[^,]*), \{\s*method: "POST"', self.sources["app.js"]),
+                         ['register ? "/api/auth/register" : "/api/auth/login"', '"/api/auth/logout"'])
         # The DELETE is sent from one place only: the second press in the Delete Month dialog.
         app = self.sources["app.js"]
         self.assertEqual(app.count('method: "DELETE"'), 1)
@@ -135,7 +139,7 @@ class FrontendSourceTests(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         path = workbook.create_workbook(tmp / "Fitness_Tracker.xlsx")
-        client = create_app(path, today=lambda: date(2031, 5, 6)).test_client()
+        client = workbook_app(path, today=lambda: date(2031, 5, 6)).test_client()
         self.assertEqual(client.get("/api/status").get_json()["today"], "2031-05-06")
 
     def test_day_editor_is_a_labelled_dialog(self):
@@ -220,10 +224,11 @@ class FrontendSourceTests(unittest.TestCase):
                      "Total Weight Lifted", 'class="box', "no_junk_food", "total_weight_lifted", ".box"):
             self.assertNotIn(gone, everything, gone)
         self.assertIn('<p id="saved-note" class="saved-note" role="status" hidden></p>', page)
-        # The only things to press outside the editors: the month selector and Add New Month.
+        # The only things to press outside the editors: Sign out, the sign-in form's two
+        # buttons, the month selector, Add New Month, Delete Month, and Earlier and Later.
         outside = re.sub(r"<dialog.*?</dialog>", "", page, flags=re.S)
         self.assertEqual(re.findall(r'<button id="([a-z-]+)"', outside),
-                         ["add-month", "delete-month", "days-earlier", "days-later"])
+                         ["sign-out", "auth-submit", "auth-switch", "add-month", "delete-month", "days-earlier", "days-later"])
         self.assertEqual(re.findall(r'<select id="([a-z-]+)"', outside), ["month-select"])
         # The page does not branch on what kind of month it has: there is one path through it.
         scripts = " ".join(self.sources[name] for name in FILES if name.endswith(".js"))
@@ -503,6 +508,7 @@ class FrontendSourceTests(unittest.TestCase):
         # day that has not come yet. Nothing that holds a value is ever left out.
         rules = re.findall(r"([^{}]+)\{[^{}]*display: none;", re.sub(r"/\*.*?\*/", "", small, flags=re.S))
         self.assertEqual([" ".join(rule.split()) for rule in rules], [
+            ".account[hidden], .auth-card .field[hidden]",
             ".section-nav::-webkit-scrollbar",
             '.section-nav[data-today="no"] .today-link',
             ".today-strip[hidden]",
@@ -551,10 +557,12 @@ class FrontendSourceTests(unittest.TestCase):
         page, script = self.sources["index.html"], self.sources["app.js"]
         self.assertIn('<p id="issues-help"></p>', page)
         self.assertNotIn("Fix these in Excel", page + script)
-        # One wording, because every month that is shown can be edited.
-        self.assertIn('const ISSUES_HELP = "Correct these in Excel and save, or replace the value with Edit on that row. "',
-                      script)
-        self.assertEqual(script.count("Correct these in Excel"), 1)
+        # One wording, because every month that is shown can be edited, and no mention of Excel:
+        # the page no longer works over a workbook.
+        self.assertIn('const ISSUES_HELP = "Replace the value with Edit on that row. "', script)
+        self.assertEqual(script.count("Replace the value with Edit"), 1)
+        for name, text in self.sources.items():
+            self.assertNotRegex(text, r"(?i)excel|xlsx|\bworkbook\b", name)
 
     def test_statuses_do_not_depend_on_colour(self):
         css, script = self.sources["styles.css"], self.sources["app.js"]
@@ -673,7 +681,8 @@ class FrontendSourceTests(unittest.TestCase):
         self.assertNotIn("#delete-dialog", css)
         # The words that matter are said: which month, that it cannot be undone, and why the last one stays.
         self.assertIn("This cannot be undone.", app)
-        self.assertIn("This is the only month in the workbook, so it cannot be deleted. Add another month first.", app)
+        self.assertIn("This is your only month, so it cannot be deleted. Add another month first.", app)
+        self.assertIn("It is removed from your account with everything entered in it", app)
         self.assertIn("els.deleteSubmit.textContent = month ? `Delete ${month.label}` : \"Delete Month\";", app)
 
     def test_the_page_is_dark_with_one_accent_and_text_that_can_be_read(self):

@@ -1,2 +1,2 @@
--r requirements.txt
+-r requirements-desktop.txt
 pyinstaller==6.22.3

@@ -11,8 +11,8 @@ const EXERCISE_CHOICES = ["Completed", "Partial", "Rest Day", "Missed"];
 const JUNK_FOOD_CHOICES = ["None", "Controlled", "Had"];
 const NOT_ENTERED = "Not entered";
 
-const LOCKED_MESSAGE =
-  "Close Fitness_Tracker.xlsx in Excel before saving changes. Then click Save again.";
+const SESSION_MESSAGE =
+  "Your session has ended, so this was not saved. Close this editor, sign in again, then enter it once more.";
 
 const ONE_DECIMAL = /^\d+(\.\d)?$/;
 
@@ -163,8 +163,8 @@ function setupEditor(config) {
       showError(`The change could not be saved (${error.message}). Nothing was changed.`);
       return;
     }
-    if (error.code === "workbook_locked") {
-      showError(LOCKED_MESSAGE);
+    if (error.code === "not_signed_in") {
+      showError(SESSION_MESSAGE);
       return;
     }
     const general = [];

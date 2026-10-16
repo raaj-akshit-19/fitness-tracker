@@ -1,9 +1,10 @@
-"""Start the tracker on this computer and open it in the browser.
+"""Start the desktop edition on this computer and open it in the browser.
 
 This is what the packaged "Fitness Tracker.exe" runs, and what
-"Start Fitness Tracker.bat" runs from source during development. It only ever
-listens on 127.0.0.1, so nothing outside this computer can reach it, and it
-needs no internet connection.
+"Start Fitness Tracker.bat" runs from source. It serves the workbook beside it
+(see desktop.py), only ever listens on 127.0.0.1, so nothing outside this
+computer can reach it, and it needs no internet connection. The web edition,
+over Supabase, is started differently: see README.md.
 
     python -m backend.launch [--port N] [--no-browser] [--verbose]
 
@@ -57,7 +58,7 @@ def check_dependencies():
     raise LaunchError(
         f"Python is missing: {', '.join(missing)}.\n"
         f"Install with:\n"
-        f'  "{sys.executable}" -m pip install -r "{PROJECT_DIR / "requirements.txt"}"'
+        f'  "{sys.executable}" -m pip install -r "{PROJECT_DIR / "requirements-desktop.txt"}"'
     )
 
 
@@ -243,7 +244,8 @@ def main(argv=None, open_browser=webbrowser.open):
         # Imported only now, so a missing package gives the message above.
         from werkzeug.serving import make_server
 
-        from backend.app import FRONTEND_DIR, create_app
+        from backend.app import FRONTEND_DIR
+        from backend.desktop import create_desktop_app
         from backend.workbook import WORKBOOK_PATH
 
         check_page_files(FRONTEND_DIR)
@@ -265,7 +267,7 @@ def main(argv=None, open_browser=webbrowser.open):
         if args.verbose:
             logging.basicConfig(level=logging.INFO, format="%(message)s")
         try:
-            server = make_server(HOST, port, create_app(WORKBOOK_PATH), threaded=True)
+            server = make_server(HOST, port, create_desktop_app(WORKBOOK_PATH), threaded=True)
         except (OSError, SystemExit) as error:
             raise LaunchError(f"The server could not start on {url}\n  {error}") from error
     except LaunchError as error:

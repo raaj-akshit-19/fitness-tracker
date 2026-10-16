@@ -1,6 +1,6 @@
 "use strict";
 
-// The tracker's one page. Every value shown comes from the local backend;
+// The tracker's one page. Every value shown comes from the server;
 // nothing is computed or filled in here. Days and Sunday measurements are
 // changed through the editors in editor.js, which send them to the backend.
 
@@ -38,7 +38,7 @@ const STATUS_MARKS = {
   Completed: "completed", Partial: "partial", "Rest Day": "rest", Missed: "missed",
   None: "completed", Controlled: "partial", Had: "missed",
 };
-const ISSUES_HELP = "Correct these in Excel and save, or replace the value with Edit on that row. "
+const ISSUES_HELP = "Replace the value with Edit on that row. "
   + "They are shown as unreadable, not guessed.";
 // What a figure or a table row is known by, so a quiet refresh can tell which ones changed.
 const FIGURE_KEYS = ["section", "habit", "stat", "week", "measure", "field", "date", "row"];
@@ -50,10 +50,11 @@ const SAVED_NOTE_MS = 8000;
 // either side, or the nearest five to that at either end of the month.
 const WINDOW_DAYS = 5;
 const DELETE_HINT = "Choosing a month here deletes nothing. You are asked to confirm first.";
+const OFFLINE_MESSAGE = "Raft cannot be reached right now. Check your internet connection.";
 
 const $ = (id) => document.getElementById(id);
 const els = {
-  status: $("workbook-status"),
+  status: $("save-status"),
   select: $("month-select"),
   addButton: $("add-month"),
   deleteButton: $("delete-month"),
@@ -97,6 +98,25 @@ const els = {
   deleteError: $("delete-error"),
   deleteSubmit: $("delete-submit"),
   deleteCancel: $("delete-cancel"),
+  app: $("app-main"),
+  account: $("account"),
+  accountName: $("account-name"),
+  signOut: $("sign-out"),
+  auth: $("auth-view"),
+  authForm: $("auth-form"),
+  authTitle: $("auth-title"),
+  authLead: $("auth-lead"),
+  authNameField: $("auth-name-field"),
+  authName: $("auth-name"),
+  authEmail: $("auth-email"),
+  authPassword: $("auth-password"),
+  authConfirmField: $("auth-confirm-field"),
+  authConfirm: $("auth-confirm"),
+  authError: $("auth-error"),
+  authInfo: $("auth-info"),
+  authSubmit: $("auth-submit"),
+  authSwitchText: $("auth-switch-text"),
+  authSwitch: $("auth-switch"),
 };
 
 const state = {
@@ -113,11 +133,14 @@ const state = {
   editOrigin: "row",    // where the day editor was opened from: "row" or "today"
   enterTurn: "",        // see drawIn
   currentLink: null,    // the section link the window is on
-  modified: null,   // workbook_modified of the data currently on screen
+  modified: null,   // when the data currently on screen last changed, as the server said
   day: null,        // calendar day the analytics on screen were worked out for
   windowShift: 0,   // how many windows of days the tracker has been moved, earlier (-) or later (+)
   deleting: null,   // the month the user has been asked to confirm deleting
   loadId: 0,
+  signedIn: null,   // true, false, or null until the server has said
+  authMode: "signin",   // the form showing: "signin" or "register"
+  authBusy: false,
 };
 
 const savedFormat = new Intl.DateTimeFormat("en-GB", {
@@ -133,15 +156,26 @@ class ApiError extends Error {
   }
 }
 
+// The user's own date, which the server takes (within a day of its own) to
+// know which days are still to come for them.
+function localToday() {
+  const now = new Date();
+  const two = (number) => String(number).padStart(2, "0");
+  return `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
+}
+
+// The session lives in cookies the page cannot read (HttpOnly); the browser
+// sends them with every request. A reply saying the session has ended shows
+// the sign-in form.
 async function api(path, options = {}) {
   let response;
   try {
-    response = await fetch(path, { cache: "no-store", ...options });
+    response = await fetch(path, {
+      cache: "no-store", credentials: "same-origin", ...options,
+      headers: { "X-Raft-Today": localToday(), ...(options.headers || {}) },
+    });
   } catch {
-    throw new ApiError(
-      "backend_unavailable",
-      "Cannot reach the local backend (start it with: python -m backend.app)."
-    );
+    throw new ApiError("backend_unavailable", OFFLINE_MESSAGE);
   }
   let body = null;
   try {
@@ -151,11 +185,13 @@ async function api(path, options = {}) {
   }
   if (!response.ok || body === null) {
     const error = body && body.error;
-    throw new ApiError(
+    const failure = new ApiError(
       error ? error.code : "unexpected_response",
-      error ? error.message : `The backend gave an unexpected response (${response.status}).`,
+      error ? error.message : `Raft gave an unexpected response (${response.status}).`,
       error ? error.fields : null
     );
+    if (failure.code === "not_signed_in" && !path.startsWith("/api/auth/")) signedOut();
+    throw failure;
   }
   return body;
 }
@@ -193,8 +229,8 @@ function numberCell(value, unreadable) {
   return cell(numberFormat.format(value), "num");
 }
 
-// A status as it is shown: its mark, then the word the workbook
-// holds. The mark is the one the analytics use, so a status looks the same
+// A status as it is shown: its mark, then the word that was
+// entered. The mark is the one the analytics use, so a status looks the same
 // everywhere and is never told by its colour alone. A past day left blank has
 // the mark of a day that was not entered.
 function statusParts(value, past) {
@@ -259,7 +295,7 @@ function openDay(day, data, origin) {
 }
 
 // Today's entries, first on the page of the month they belong to: what the
-// workbook holds for today, and the way to change it.
+// was entered for today, and the way to change it.
 function renderToday(data, today, unreadable) {
   const day = data.days.find((entry) => entry.date === today);
   state.todayButton = null;
@@ -357,7 +393,7 @@ function renderDays(data, today) {
   const { unreadable, stillBlank } = monthMarks(data, today);
   state.editButtons = {};
   // Only the days of the window are drawn. Every day stays in the month in
-  // hand, and in the workbook, whether it is on screen or not.
+  // hand, and in the account, whether it is on screen or not.
   const shown = dayWindow(data.days, today, state.windowShift);
   const visible = data.days.slice(shown.start - 1, shown.start - 1 + WINDOW_DAYS);
   els.daysEarlier.disabled = shown.start <= 1;
@@ -607,7 +643,7 @@ function daySaved(result, changes) {
       issue.date !== date || !(issue.field in changes));
     redrawAfterSave();
   }
-  showSavedNote(els.savedNote, `Saved: ${dayFormat.format(parseDay(date))} was written to the workbook.`);
+  showSavedNote(els.savedNote, `Saved: ${dayFormat.format(parseDay(date))} is up to date in your account.`);
   focusDayButton(date);
 }
 
@@ -633,7 +669,7 @@ function measurementSaved(result, changes) {
     redrawAfterSave();
   }
   showSavedNote(els.measureSavedNote,
-    `Saved: measurements for ${dayFormat.format(parseDay(date))} were written to the workbook.`);
+    `Saved: measurements for ${dayFormat.format(parseDay(date))} are up to date in your account.`);
   focusButton(state.measureButtons[date]);
 }
 
@@ -663,7 +699,7 @@ function chooseMonth(preferred) {
 }
 
 // Reload the month list and the selected month. Returns true when the screen
-// now matches the workbook.
+// now matches what is saved.
 async function reload(preferred) {
   const loadId = ++state.loadId;
   try {
@@ -707,7 +743,7 @@ async function reload(preferred) {
     trackBar();
     return true;
   } catch (error) {
-    if (loadId !== state.loadId) return false;
+    if (loadId !== state.loadId || error.code === "not_signed_in") return false;
     reportFailure(error);
     return false;
   } finally {
@@ -737,31 +773,207 @@ function setStatus(text) {
 }
 
 async function poll() {
+  if (state.signedIn === false) return;       // the sign-in form is showing
   try {
     const status = await api("/api/status");
+    showSignedIn(status.user);
     state.today = status.today || null;
-    const saved = savedFormat.format(new Date(status.workbook_modified));
-    setStatus(
-      status.unsaved_changes
-        ? `Workbook last saved ${saved}. Excel has unsaved changes; showing the last saved data.`
-        : status.locked
-          ? `Workbook last saved ${saved}. It is open in Excel; changes appear here each time you save.`
-          : `Workbook last saved ${saved}.`
-    );
-    // Reload when the workbook was saved, or when the date has changed, since
-    // which days are pending depends on today.
+    const modified = status.modified;
+    setStatus(`Last saved ${savedFormat.format(new Date(modified))}.`);
+    // Reload when something was saved, here or on another device, or when the
+    // date has changed, since which days are pending depends on today.
     const day = new Date().toDateString();
-    if (status.workbook_modified !== state.modified || day !== state.day) {
+    if (modified !== state.modified || day !== state.day) {
       if (await reload()) {
-        state.modified = status.workbook_modified;
+        state.modified = modified;
         state.day = day;
       }
     }
   } catch (error) {
+    if (error.code === "not_signed_in") return;
     setStatus("");
     reportFailure(error);
   }
 }
+
+// ---------------------------------------------------------------- signing in
+
+function showSignedIn(user) {
+  state.signedIn = true;
+  if (user) {
+    const name = user.display_name || user.email || "";
+    if (els.accountName.textContent !== name) els.accountName.textContent = name;
+    // The desktop edition has one user and no account to sign out of.
+    els.signOut.hidden = Boolean(user.local);
+  }
+  els.auth.hidden = true;
+  els.app.hidden = false;
+  els.account.hidden = false;
+}
+
+// The session has ended (signed out here, elsewhere, or it ran out). Nothing of
+// the last user's data stays on the page. An editor left open keeps what was
+// typed in it; saving it says the session has ended.
+function signedOut() {
+  if (state.signedIn === false) return;
+  state.signedIn = false;
+  state.loadId += 1;          // a load still on its way is dropped
+  Object.assign(state, {
+    months: [], selected: null, shown: null, data: null, analytics: null, shownToday: null,
+    modified: null, day: null, windowShift: 0, deleting: null,
+    editButtons: {}, measureButtons: {}, todayButton: null,
+  });
+  for (const node of [els.select, els.daysBody, els.measurementsBody, els.analyticsBody, els.todayStrip, els.title, els.barMonth]) {
+    node.replaceChildren();
+  }
+  els.select.disabled = true;
+  els.view.hidden = true;
+  els.empty.hidden = true;
+  els.account.hidden = true;
+  els.accountName.textContent = "";
+  els.app.hidden = true;
+  setStatus("");
+  clearNotice();
+  els.authPassword.value = "";
+  els.authConfirm.value = "";
+  showAuth(state.authMode);
+}
+
+const AUTH_FIELDS = {
+  email: { input: () => els.authEmail, error: "auth-email-error" },
+  password: { input: () => els.authPassword, error: "auth-password-error" },
+  confirm: { input: () => els.authConfirm, error: "auth-confirm-error" },
+  display_name: { input: () => els.authName, error: "auth-name-error" },
+};
+
+function clearAuthErrors() {
+  for (const field of Object.values(AUTH_FIELDS)) {
+    const error = $(field.error);
+    error.hidden = true;
+    error.textContent = "";
+    field.input().setAttribute("aria-invalid", "false");
+  }
+  els.authError.hidden = true;
+  els.authError.textContent = "";
+}
+
+// fields: what is wrong with each field, by the name the server uses.
+function showAuthErrors(fields, message) {
+  let first = null;
+  for (const [name, text] of Object.entries(fields || {})) {
+    const field = AUTH_FIELDS[name];
+    if (!field) continue;
+    const error = $(field.error);
+    error.textContent = text;
+    error.hidden = false;
+    field.input().setAttribute("aria-invalid", "true");
+    first = first || field.input();
+  }
+  if (message && !first) {
+    els.authError.textContent = message;
+    els.authError.hidden = false;
+  }
+  if (first && first.focus) first.focus();
+}
+
+function showAuth(mode) {
+  const register = mode === "register";
+  state.authMode = mode;
+  els.authTitle.textContent = register ? "Create your account" : "Sign in";
+  els.authLead.textContent = register
+    ? "Your months are kept in your own account, seen by no one else."
+    : "Sign in to see your months.";
+  els.authNameField.hidden = !register;
+  els.authConfirmField.hidden = !register;
+  els.authPassword.setAttribute("autocomplete", register ? "new-password" : "current-password");
+  els.authSubmit.textContent = register ? "Create account" : "Sign in";
+  els.authSwitchText.textContent = register ? "Already have an account?" : "New to Raft?";
+  els.authSwitch.textContent = register ? "Sign in" : "Create an account";
+  clearAuthErrors();
+  els.auth.hidden = false;
+}
+
+const AUTH_HINTS = {
+  email: "Enter your email address.",
+  passwordMissing: "Enter your password.",
+  passwordShort: "Use at least 8 characters.",
+  name: "Enter the name Raft should show.",
+  mismatch: "The two passwords do not match.",
+};
+
+// The checks the server makes too, caught here first.
+function authProblems(body, register) {
+  const problems = {};
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) problems.email = AUTH_HINTS.email;
+  if (!body.password) problems.password = AUTH_HINTS.passwordMissing;
+  if (register) {
+    if (!body.display_name) problems.display_name = AUTH_HINTS.name;
+    if (body.password && body.password.length < 8) problems.password = AUTH_HINTS.passwordShort;
+    if (body.confirm !== body.password) problems.confirm = AUTH_HINTS.mismatch;
+  }
+  return problems;
+}
+
+els.authSwitch.addEventListener("click", () => {
+  els.authInfo.hidden = true;
+  showAuth(state.authMode === "register" ? "signin" : "register");
+  focusButton(state.authMode === "register" ? els.authName : els.authEmail);
+});
+
+els.authForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (state.authBusy) return;
+  clearAuthErrors();
+  els.authInfo.hidden = true;
+  const register = state.authMode === "register";
+  const body = { email: els.authEmail.value.trim(), password: els.authPassword.value };
+  if (register) Object.assign(body, { confirm: els.authConfirm.value, display_name: els.authName.value.trim() });
+  const problems = authProblems(body, register);
+  if (Object.keys(problems).length > 0) {
+    showAuthErrors(problems);
+    return;
+  }
+  state.authBusy = true;
+  els.authSubmit.disabled = true;
+  els.authSubmit.textContent = register ? "Creating account…" : "Signing in…";
+  try {
+    const result = await api(register ? "/api/auth/register" : "/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    els.authPassword.value = "";
+    els.authConfirm.value = "";
+    if (result.confirmation_required) {
+      showAuth("signin");
+      els.authInfo.textContent = result.message;
+      els.authInfo.hidden = false;
+      return;
+    }
+    showSignedIn(result.user);
+    await poll();
+  } catch (error) {
+    showAuthErrors(error.fields, error.message);
+  } finally {
+    state.authBusy = false;
+    els.authSubmit.disabled = false;
+    els.authSubmit.textContent = state.authMode === "register" ? "Create account" : "Sign in";
+  }
+});
+
+// The server clears the session cookies whenever it answers; only when it
+// cannot be reached does the page stay signed in, and says so.
+els.signOut.addEventListener("click", async () => {
+  els.signOut.disabled = true;
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+    signedOut();
+  } catch (error) {
+    showNotice(`Could not sign out. ${error.message}`);
+  } finally {
+    els.signOut.disabled = false;
+  }
+});
 
 async function pollLoop() {
   if (!document.hidden) await poll();
@@ -822,7 +1034,7 @@ els.daysLater.addEventListener("click", () => moveDays(1));
 
 // The dialog has two steps. First a month is chosen, which deletes nothing.
 // Then the dialog says which month would go and waits for the button that
-// names it. Cancel, Escape and closing the dialog leave the workbook alone.
+// names it. Cancel, Escape and closing the dialog leave everything as it was.
 function showDeleteStep(month) {
   const only = state.months.length <= 1;
   state.deleting = month;
@@ -830,11 +1042,11 @@ function showDeleteStep(month) {
   els.deleteSubmit.disabled = only;
   els.deleteSubmit.textContent = month ? `Delete ${month.label}` : "Delete Month";
   els.deleteHint.textContent = only
-    ? "This is the only month in the workbook, so it cannot be deleted. Add another month first."
+    ? "This is your only month, so it cannot be deleted. Add another month first."
     : DELETE_HINT;
   els.deleteHint.hidden = month !== null;
   els.deleteConfirm.textContent = month
-    ? `Delete ${month.label}? Its sheet is removed from Fitness_Tracker.xlsx with everything entered in it: `
+    ? `Delete ${month.label}? It is removed from your account with everything entered in it: `
       + "every day and every Sunday's measurements. This cannot be undone."
     : "";
   els.deleteConfirm.hidden = month === null;

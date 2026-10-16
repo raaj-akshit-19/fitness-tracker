@@ -29,7 +29,7 @@ if not errorlevel 1 goto use_python
 echo Python was not found on this computer.
 echo Install Python 3, then in this folder run:
 echo   python -m venv .venv
-echo   .venv\Scripts\python -m pip install -r requirements.txt
+echo   .venv\Scripts\python -m pip install -r requirements-desktop.txt
 goto failed
 
 :use_py
@@ -47,7 +47,7 @@ echo The Python environment in .venv does not run on this computer.
 echo It was probably made on another computer, or Python was removed.
 echo Delete the .venv folder, then in this folder run:
 echo   python -m venv .venv
-echo   .venv\Scripts\python -m pip install -r requirements.txt
+echo   .venv\Scripts\python -m pip install -r requirements-desktop.txt
 goto failed
 
 :finished

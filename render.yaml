@@ -1,0 +1,23 @@
+# Raft's web edition on Render (free plan). Create the service from this file
+# with a Blueprint, then fill in the two Supabase settings when Render asks
+# (they are marked sync: false so they never live in this file). See README.md.
+services:
+  - type: web
+    name: raft
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 30 --access-logfile -
+    healthCheckPath: /api/health
+    autoDeploy: false
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.3
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: RAFT_TRUST_PROXY
+        value: "1"
+      - key: RAFT_COOKIE_SECURE
+        value: "1"

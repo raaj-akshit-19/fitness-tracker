@@ -27,9 +27,11 @@ __pycache__/
 *_test_copy.xlsx
 *.test.xlsx
 
-# Local settings and tool folders
+# Local settings and tool folders. .env holds the Supabase settings and is
+# never committed; .env.example (names and placeholders only) is.
 .env
 .env.*
+!.env.example
 *.local
 .vscode/
 .idea/

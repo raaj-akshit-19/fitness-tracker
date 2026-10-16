@@ -1,0 +1,78 @@
+# A small local stand-in for a Supabase project, for development and tests only:
+# the same PostgreSQL, the same auth server (GoTrue) and the same REST layer
+# (PostgREST) that Supabase runs, behind one address like a real project URL:
+#
+#   http://127.0.0.1:54321/auth/v1/...   auth
+#   http://127.0.0.1:54321/rest/v1/...   database
+#
+# Start it, and apply the migrations, with:   python supabase/local/stack.py up
+# Nothing here is used by the deployed app. The secrets below are local
+# placeholders for this throwaway stack, not real credentials.
+
+name: raft-local
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_PASSWORD: local-postgres-password
+    volumes:
+      - ./roles.sql:/docker-entrypoint-initdb.d/00-roles.sql:ro
+    ports:
+      - "127.0.0.1:54322:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  auth:
+    image: supabase/gotrue:v2.177.0
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: http://127.0.0.1:54321/auth/v1
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:local-auth-password@db:5432/postgres?search_path=auth
+      GOTRUE_SITE_URL: http://127.0.0.1:5000
+      GOTRUE_JWT_SECRET: local-jwt-secret-for-tests-only-0123456789abcdef
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "${RAFT_LOCAL_AUTOCONFIRM:-true}"
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_PASSWORD_MIN_LENGTH: 8
+      GOTRUE_RATE_LIMIT_EMAIL_SENT: 1000
+      GOTRUE_SMTP_HOST: mail
+      GOTRUE_SMTP_PORT: 2500
+      GOTRUE_SMTP_ADMIN_EMAIL: raft@example.test
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
+      GOTRUE_LOG_LEVEL: warn
+
+  mail:
+    image: inbucket/inbucket:3.0.4
+
+  rest:
+    image: postgrest/postgrest:v12.2.3
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:local-authenticator-password@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: local-jwt-secret-for-tests-only-0123456789abcdef
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+
+  gateway:
+    image: nginx:1.27-alpine
+    depends_on: [auth, rest]
+    volumes:
+      - ./gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "127.0.0.1:54321:80"

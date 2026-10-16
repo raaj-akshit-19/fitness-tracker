@@ -1,4 +1,9 @@
-"""Read and write access to Fitness_Tracker.xlsx for the local backend.
+"""Read and write access to a Fitness_Tracker.xlsx workbook.
+
+This is the desktop edition's store (see desktop.py). The web edition keeps
+its data in Supabase instead (see supabase_store.py) and never imports this
+module. Both answer to the same methods, so either can stand behind the same
+API.
 
 Every read loads the workbook fresh from disk, so edits saved in Excel show up
 on the next request. Each operation touches exactly one monthly sheet; nothing
@@ -24,33 +29,16 @@ from openpyxl.utils.exceptions import InvalidFileException
 from backend import excel_live
 from backend import validation
 from backend import workbook as wbk
-
-MIN_YEAR = 2000
-MAX_YEAR = 2100
+from backend.errors import (  # noqa: F401  (the errors are part of this module's API)
+    MAX_YEAR, MIN_YEAR, DayNotFoundError, InvalidMonthError, InvalidUpdateError,
+    LastMonthError, MonthExistsError, MonthNotFoundError, TrackerError,
+    checked_update, validate_month,
+)
+from backend.months import month_summary
 
 MEASUREMENT_KEYS = [
     "sunday", "weight_kg", "waist_cm", "chest_cm", "bicep_cm", "thigh_cm", "forearm_cm",
 ]
-
-
-class TrackerError(Exception):
-    code = "tracker_error"
-
-
-class InvalidMonthError(TrackerError):
-    code = "invalid_month"
-
-
-class MonthNotFoundError(TrackerError):
-    code = "month_not_found"
-
-
-class MonthExistsError(TrackerError):
-    code = "month_exists"
-
-
-class LastMonthError(TrackerError):
-    code = "last_month"
 
 
 class WorkbookNotFoundError(TrackerError):
@@ -67,29 +55,6 @@ class WorkbookUnreadableError(TrackerError):
 
 class WorkbookFormatError(TrackerError):
     code = "workbook_format"
-
-
-class DayNotFoundError(TrackerError):
-    code = "day_not_found"
-
-
-class InvalidUpdateError(TrackerError):
-    """Values that may not be stored. `fields` maps each one to what is wrong with it."""
-    code = "invalid_request"
-
-    def __init__(self, fields):
-        super().__init__(" ".join(fields.values()))
-        self.fields = dict(fields)
-
-
-def validate_month(year, month):
-    for name, value in (("year", year), ("month", month)):
-        if isinstance(value, bool) or not isinstance(value, int):
-            raise InvalidMonthError(f"{name} must be a whole number.")
-    if not MIN_YEAR <= year <= MAX_YEAR:
-        raise InvalidMonthError(f"year must be between {MIN_YEAR} and {MAX_YEAR}.")
-    if not 1 <= month <= 12:
-        raise InvalidMonthError("month must be between 1 and 12.")
 
 
 class TrackerStore:
@@ -316,31 +281,8 @@ class TrackerStore:
                 os.remove(tmp)
 
 
-def _month_summary(year, month):
-    return {"year": year, "month": month, "label": wbk.sheet_name(year, month)}
-
-
-def _checked_update(year, month, day, fields, today, sunday):
-    """The date and the values in stored form, or InvalidUpdateError listing everything wrong."""
-    try:
-        when = validation.validate_day(year, month, day)
-    except validation.ValidationError as error:
-        raise DayNotFoundError(f"{wbk.sheet_name(year, month)} has no day {day}.") from error
-    errors = {}
-    if sunday and when.weekday() != 6:
-        errors["day"] = f"{when:%d %B %Y} is not a Sunday. Measurements go on Sundays."
-    elif when > today:
-        errors["day"] = ("A Sunday in the future cannot be edited yet." if sunday
-                         else "A day in the future cannot be edited yet.")
-    check = validation.validate_measurement_update if sunday else validation.validate_daily_update
-    values = {}
-    try:
-        values = check(fields)
-    except validation.ValidationError as error:
-        errors.update(error.errors)
-    if errors:
-        raise InvalidUpdateError(errors)
-    return when, values
+_month_summary = month_summary
+_checked_update = checked_update
 
 
 def _target_cells(ws, year, month, when, values, sunday):

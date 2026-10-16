@@ -6,7 +6,7 @@ Run from the project root:  python -m unittest discover -s tests -v
 import shutil
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -14,7 +14,7 @@ from openpyxl import load_workbook
 
 from backend import store as st
 from backend import workbook as wbk
-from backend.app import create_app
+from tests.support import workbook_app
 
 
 class ApiTests(unittest.TestCase):
@@ -22,7 +22,7 @@ class ApiTests(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.path = wbk.create_workbook(self.tmp / "Fitness_Tracker.xlsx")
-        self.client = create_app(self.path).test_client()
+        self.client = workbook_app(self.path).test_client()
 
     def assert_error(self, response, status, code):
         self.assertEqual(response.status_code, status)
@@ -193,13 +193,20 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(len(self.client.get("/api/months").get_json()), 1)
 
     def test_missing_workbook(self):
-        client = create_app(self.tmp / "nope.xlsx").test_client()
+        client = workbook_app(self.tmp / "nope.xlsx").test_client()
         self.assert_error(client.get("/api/months"), 500, "workbook_missing")
 
     def test_status(self):
         body = self.client.get("/api/status").get_json()
-        self.assertEqual(set(body), {"workbook_modified", "locked", "unsaved_changes", "today"})
-        self.assertEqual(body["today"], date.today().isoformat())
+        # When the data last changed (under both names), whether it can be written, the
+        # user's date, and who is signed in.
+        self.assertEqual(set(body), {"workbook_modified", "modified", "locked", "unsaved_changes", "today", "user"})
+        self.assertEqual(body["modified"], body["workbook_modified"])
+        self.assertEqual(body["user"], {"email": "test@example.test", "display_name": "Test"})
+        # Without the page's own date, the date in UTC.
+        self.assertEqual(body["today"], datetime.now(timezone.utc).date().isoformat())
+        sent = self.client.get("/api/status", headers={"X-Raft-Today": body["today"]}).get_json()
+        self.assertEqual(sent["today"], body["today"])
         self.assertIs(body["unsaved_changes"], False)
         self.assertIs(body["locked"], False)
 

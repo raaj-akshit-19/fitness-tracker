@@ -32,7 +32,10 @@ const settle = async () => {
   for (let turn = 0; turn < 20; turn++) await new Promise((resolve) => setImmediate(resolve));
 };
 
+// Once the session has ended, every request is refused as the real backend
+// refuses it, until the page signs in again.
 function respond(server, url) {
+  if (server.signedOut) return FIXTURES.editing.replies.signed_out;
   if (server.override && server.override[url]) return server.override[url];
   if (url === "/api/status") return { status: 200, body: server.status };
   if (url === "/api/months") return { status: 200, body: server.months };
@@ -51,6 +54,7 @@ function respond(server, url) {
 // of that day and answer with the saved record. server.reply, when set, is
 // given as the answer instead (a reply, or a function returning one).
 function write(server, url, changes) {
+  if (server.signedOut) return FIXTURES.editing.replies.signed_out;
   if (server.reply) return typeof server.reply === "function" ? server.reply(url, changes) : server.reply;
   const match = url.match(/^\/api\/months\/(\d+)\/(\d+)\/(days|measurements)\/(\d+)$/);
   const month = server.data[`${match[1]}-${match[2]}`].month;
@@ -75,7 +79,7 @@ function write(server, url, changes) {
   }
   month.issues = month.issues.filter((issue) => issue.date !== date || !(issue.field in changes));
   server.writes += 1;
-  server.status.workbook_modified = `2026-10-20T22:00:${String(server.writes).padStart(2, "0")}`;
+  server.status.modified = server.status.workbook_modified = `2026-10-20T22:00:${String(server.writes).padStart(2, "0")}`;
   return {
     status: 200,
     body: {
@@ -102,15 +106,31 @@ function remove(server, url, body) {
   server.months = server.months.filter((month) => month !== found);
   delete server.data[`${found.year}-${found.month}`];
   server.writes += 1;
-  server.status.workbook_modified = `2026-10-20T22:00:${String(server.writes).padStart(2, "0")}`;
+  server.status.modified = server.status.workbook_modified = `2026-10-20T22:00:${String(server.writes).padStart(2, "0")}`;
   return { status: 200, body: { deleted: found, months: server.months } };
+}
+
+// The account routes: signing in with server.password, and signing out.
+// Registering answers with server.registerAnswers, one at a time.
+function account(server, url, body) {
+  if (url === "/api/auth/register") return server.registerAnswers.shift();
+  if (url === "/api/auth/logout") {
+    server.signedOut = true;
+    return { status: 200, body: { signed_out: true } };
+  }
+  if (url === "/api/auth/login" && body.email === server.status.user.email && body.password === server.password) {
+    server.signedOut = false;
+    return { status: 200, body: { user: server.status.user } };
+  }
+  return { status: 401, body: { error: { code: "invalid_credentials",
+    message: "That email and password do not match an account." } } };
 }
 
 const parseDayOfWeek =(iso) => new Date(`${iso}T00:00:00Z`).getUTCDay();
 
 // boot() starts the page on the four-month workbook; boot({ editing: true }) on
 // the editors' one.
-async function boot({ editing = false, narrow = null } = {}) {
+async function boot({ editing = false, narrow = null, signedOut = false } = {}) {
   const document = new FakeDocument();
   // The parts of index.html that hold one another, nested as they are there.
   const nest = (parent, ...ids) => document.getElementById(parent).append(...ids.map((id) => document.getElementById(id)));
@@ -128,6 +148,9 @@ async function boot({ editing = false, narrow = null } = {}) {
     override: null,
     reply: null,
     writes: 0,
+    signedOut,
+    password: "correct-horse-1",
+    registerAnswers: [],
   };
   const calls = [];       // the address of every read
   const requests = [];    // every request that would change the workbook
@@ -139,8 +162,9 @@ async function boot({ editing = false, narrow = null } = {}) {
     else requests.push({ method, url, headers: options.headers, body: options.body });
     if (server.down) throw new TypeError("Failed to fetch");
     const reply = method === "GET" ? respond(server, url)
-      : method === "DELETE" ? remove(server, url, JSON.parse(options.body))
-        : await write(server, url, JSON.parse(options.body));
+      : url.startsWith("/api/auth/") ? account(server, url, options.body ? JSON.parse(options.body) : {})
+        : method === "DELETE" ? (server.signedOut ? respond(server, url) : remove(server, url, JSON.parse(options.body)))
+          : await write(server, url, JSON.parse(options.body));
     if (method !== "GET") lastReply = reply;
     return { ok: reply.status < 400, status: reply.status, json: async () => reply.body };
   };
@@ -183,13 +207,13 @@ async function boot({ editing = false, narrow = null } = {}) {
     // Pretend the workbook was saved, then let the page notice.
     async save() {
       saves += 1;
-      server.status.workbook_modified = `2026-10-20T21:00:${String(saves).padStart(2, "0")}`;
+      server.status.modified = server.status.workbook_modified = `2026-10-20T21:00:${String(saves).padStart(2, "0")}`;
       await app.poll();
     },
     section: (name) => find(app.body, hasData("section", name)),
     tile: (name) => value(app.body, name),
   };
-  await app.select("2026-10");
+  if (!signedOut) await app.select("2026-10");
   return app;
 }
 
@@ -264,7 +288,7 @@ const FIELD_IDS = {
   exercise: "edit-exercise", junk_food: "edit-junk-food", cardio: "edit-cardio",
   calories_kcal: "edit-calories", protein_g: "edit-protein", weight_lifted_kg: "edit-weight",
 };
-const LOCKED_TEXT = "Close Fitness_Tracker.xlsx in Excel before saving changes. Then click Save again.";
+const SESSION_TEXT = "Your session has ended, so this was not saved. Close this editor, sign in again, then enter it once more.";
 
 const el = (app, id) => app.document.getElementById(id);
 const field = (app, name) => el(app, FIELD_IDS[name]);
@@ -429,7 +453,7 @@ test("Save sends one PUT to that day with the changed fields as JSON", async () 
   assert.deepEqual(app.calls, ["/api/months/2026/10/analytics"]);     // the analytics, once; nothing else is read
   assert.equal(app.title.textContent, "October 2026");
   assert.equal(el(app, "saved-note").hidden, false);
-  assert.equal(el(app, "saved-note").textContent, "Saved: Fri 02 Oct was written to the workbook.");
+  assert.equal(el(app, "saved-note").textContent, "Saved: Fri 02 Oct is up to date in your account.");
   // Other days are as they were.
   assert.deepEqual(rowText(app, "2026-10-01"),
     ["Thu 01 Oct", "Completed", "None", "25:30", "2,200", "140.5", "2,450", "Edit"]);
@@ -523,35 +547,48 @@ test("a value the backend refuses (400) keeps the editor open with what was type
   assert.equal(el(app, "edit-error").hidden, true);
 });
 
-test("a locked workbook (423) asks for Excel to be closed and does not retry by itself", async () => {
+test("an ended session (401) keeps what was typed, says so, and does not retry by itself", async () => {
   const app = await boot({ editing: true });
-  app.server.reply = EDITING.replies.locked;
-  assert.equal(EDITING.replies.locked.status, 423);
+  assert.equal(EDITING.replies.signed_out.status, 401);
+  const before = rowText(app, "2026-10-02");
+  app.server.signedOut = true;            // signed out on another device, say
   openDay(app, "2026-10-02");
   type(app, { calories_kcal: "2000", weight_lifted_kg: "1500.5" });
   await pressSave(app);
 
   assert.ok(isOpen(app));
   assert.equal(el(app, "edit-error").hidden, false);
-  assert.equal(el(app, "edit-error").textContent, LOCKED_TEXT);
+  assert.equal(el(app, "edit-error").textContent, SESSION_TEXT);
   assert.equal(field(app, "calories_kcal").value, "2000");
   assert.equal(field(app, "weight_lifted_kg").value, "1500.5");
   assert.equal(el(app, "edit-save").disabled, false);
   assert.equal(el(app, "edit-cancel").disabled, false);
+  // Behind it, the page has put the user's data away and shows the sign-in form.
+  assert.equal(el(app, "auth-view").hidden, false);
+  assert.equal(el(app, "app-main").hidden, true);
+  assert.equal(el(app, "account").hidden, true);
+  assert.equal(app.tracker.children.length, 0);
+  assert.equal(app.body.children.length, 0);
 
-  // Time passes and the page polls: still one request, still the same editor.
+  // Time passes: the page does not poll while signed out, and nothing is sent again.
+  app.calls.length = 0;
   for (let turn = 0; turn < 3; turn++) await app.poll();
+  assert.deepEqual(app.calls, []);
   assert.equal(app.requests.length, 1);
   assert.ok(isOpen(app));
   assert.equal(field(app, "calories_kcal").value, "2000");
 
-  // Excel is closed, and Save is pressed again.
-  app.server.reply = null;
-  await pressSave(app);
-  assert.equal(app.requests.length, 2);
-  assert.deepEqual(sent(app)[1], { calories_kcal: 2000, weight_lifted_kg: 1500.5 });
-  assert.ok(!isOpen(app));
-  assert.deepEqual(rowText(app, "2026-10-02").slice(4), ["2,000", "-", "1,500.5", "Edit"]);
+  // Closed, signed in again: the month comes back, without the change that was not saved.
+  el(app, "edit-cancel").fire("click");
+  el(app, "auth-email").value = app.server.status.user.email;
+  el(app, "auth-password").value = app.server.password;
+  el(app, "auth-form").fire("submit");
+  await settle();
+  assert.equal(el(app, "auth-view").hidden, true);
+  assert.equal(el(app, "app-main").hidden, false);
+  assert.equal(el(app, "auth-password").value, "");
+  assert.deepEqual(rowText(app, "2026-10-02"), before);
+  assert.notDeepEqual(before.slice(4, 5), ["2,000"]);
 });
 
 test("a month that has gone (404) and other refusals keep the editor open and say why", async () => {
@@ -562,8 +599,12 @@ test("a month that has gone (404) and other refusals keep the editor open and sa
     [EDITING.replies.future, EDITING.replies.future.body.error.fields.day],
     [{ status: 500, body: { error: { code: "workbook_unreadable", message: "The saved workbook failed verification." } } },
       "The saved workbook failed verification."],
+    [EDITING.replies.unavailable, EDITING.replies.unavailable.body.error.message],
+    [EDITING.replies.locked, EDITING.replies.locked.body.error.message],
   ];
   assert.equal(EDITING.replies.missing.status, 404);
+  assert.equal(EDITING.replies.unavailable.status, 503);       // Supabase cannot be reached
+  assert.match(EDITING.replies.unavailable.body.error.message, /Nothing was saved/);
   assert.equal(EDITING.replies.other_layout.body.error.code, "workbook_format");    // a sheet the tracker did not lay out
   openDay(app, "2026-10-02");
   type(app, { protein_g: "108" });
@@ -580,7 +621,7 @@ test("a month that has gone (404) and other refusals keep the editor open and sa
   app.server.down = true;
   await pressSave(app);
   assert.ok(isOpen(app));
-  assert.match(el(app, "edit-error").textContent, /^Cannot reach the local backend/);
+  assert.match(el(app, "edit-error").textContent, /^Raft cannot be reached right now\. Check your internet connection\./);
   assert.equal(field(app, "protein_g").value, "108");
   assert.equal(app.requests.length, cases.length + 1);
   assert.equal(rowText(app, "2026-10-02")[5], "-");
@@ -819,9 +860,14 @@ test("the editor can be used from the keyboard and by a screen reader", async ()
 
 test("the page writes only through Add New Month, Delete Month and the editors", async () => {
   const app = await boot();
-  // Add New Month, Delete Month, and the one PUT both editors share.
-  const methods = SCRIPTS.map((script) => script.source).join("\n").match(/method:\s*"\w+"/g);
-  assert.deepEqual(methods, ['method: "POST"', 'method: "DELETE"', 'method: "PUT"']);
+  // Signing in or up, signing out, then the data: Add New Month, Delete Month,
+  // and the one PUT both editors share.
+  const source = SCRIPTS.map((script) => script.source).join("\n");
+  const methods = source.match(/method:\s*"\w+"/g);
+  assert.deepEqual(methods, ['method: "POST"', 'method: "POST"', 'method: "POST"', 'method: "DELETE"', 'method: "PUT"']);
+  // The first two are the account's own, and go nowhere else.
+  assert.match(source, /api\(register \? "\/api\/auth\/register" : "\/api\/auth\/login", \{\s*method: "POST"/);
+  assert.match(source, /api\("\/api\/auth\/logout", \{ method: "POST" \}\)/);
   const controls = (root) => findAll(root, (node) => ["input", "select", "button", "textarea"].includes(node.tagName));
   assert.equal(controls(app.body).length, 0);
   // The tracker is a display with one Edit button for each day; nothing is typed into it.
@@ -984,7 +1030,7 @@ test("Save sends one PUT with the changed measurements and shows the saved recor
   assert.deepEqual(app.calls, ["/api/months/2026/10/analytics"]);      // the analytics, once; nothing else is read
   assert.equal(el(app, "measure-saved-note").hidden, false);
   assert.equal(el(app, "measure-saved-note").textContent,
-    "Saved: measurements for Sun 04 Oct were written to the workbook.");
+    "Saved: measurements for Sun 04 Oct are up to date in your account.");
   assert.equal(el(app, "saved-note").textContent, "");                 // the daily note is not used for this
   assert.ok(app.document.activeElement === sundayButton(app, "2026-10-04"));
   assert.equal(wholeMonth(app).textContent, days);                         // the daily table is as it was
@@ -1094,24 +1140,33 @@ test("refused measurements (400) keep the editor open with what was typed", asyn
   assert.deepEqual(sundayText(app, "2026-10-04").slice(1, 5), ["70.5", "80", "-", "35.5"]);
 });
 
-test("a locked workbook (423) keeps the measurement editor open and waits for Save", async () => {
+test("an ended session (401) keeps the measurement editor open and waits", async () => {
   const app = await boot({ editing: true });
-  app.server.reply = MEASURE.replies.locked;
-  assert.equal(MEASURE.replies.locked.status, 423);
+  assert.equal(MEASURE.replies.signed_out.status, 401);
+  const before = sundayText(app, "2026-10-18");
+  app.server.signedOut = true;
   openSunday(app, "2026-10-18");
   mType(app, { weight_kg: "71.2" });
   await mSave(app);
   assert.ok(mOpen(app));
   assert.equal(el(app, "measure-error").hidden, false);
-  assert.equal(el(app, "measure-error").textContent, LOCKED_TEXT);
+  assert.equal(el(app, "measure-error").textContent, SESSION_TEXT);
   assert.equal(mField(app, "weight_kg").value, "71.2");
+  assert.equal(el(app, "auth-view").hidden, false);
   for (let turn = 0; turn < 3; turn++) await app.poll();
   assert.equal(app.requests.length, 1);                  // no retry by itself
   assert.equal(mField(app, "weight_kg").value, "71.2");
 
-  app.server.reply = null;
+  el(app, "measure-cancel").fire("click");
+  el(app, "auth-email").value = app.server.status.user.email;
+  el(app, "auth-password").value = app.server.password;
+  el(app, "auth-form").fire("submit");
+  await settle();
+  assert.deepEqual(sundayText(app, "2026-10-18"), before);
+  // Now it saves.
+  openSunday(app, "2026-10-18");
+  mType(app, { weight_kg: "71.2" });
   await mSave(app);
-  assert.equal(app.requests.length, 2);
   assert.ok(!mOpen(app));
   assert.equal(sundayText(app, "2026-10-18")[1], "71.2");
 });
@@ -1123,6 +1178,8 @@ test("other refusals are shown in the backend's words and nothing typed is lost"
     [MEASURE.replies.future, MEASURE.replies.future.body.error.fields.day],
     [MEASURE.replies.missing, MEASURE.replies.missing.body.error.message],
     [MEASURE.replies.other_layout, MEASURE.replies.other_layout.body.error.message],
+    [MEASURE.replies.unavailable, MEASURE.replies.unavailable.body.error.message],
+    [MEASURE.replies.locked, MEASURE.replies.locked.body.error.message],
   ];
   assert.match(cases[0][1], /is not a Sunday/);
   assert.match(cases[1][1], /future/);
@@ -1142,7 +1199,7 @@ test("other refusals are shown in the backend's words and nothing typed is lost"
   app.server.down = true;
   await mSave(app);
   assert.ok(mOpen(app));
-  assert.match(el(app, "measure-error").textContent, /^Cannot reach the local backend/);
+  assert.match(el(app, "measure-error").textContent, /^Raft cannot be reached right now\. Check your internet connection\./);
   assert.equal(mField(app, "thigh_cm").value, "59");
   assert.equal(sundayText(app, "2026-10-18")[5], "-");
 
@@ -1273,7 +1330,7 @@ test("both editors share one way of working", async () => {
   assert.equal(source.match(/function setupEditor\(/g).length, 1);
   assert.equal(source.match(/= setupEditor\(\{/g).length, 2);
   assert.equal(source.match(/method: "PUT"/g).length, 1);
-  assert.equal(source.match(/LOCKED_MESSAGE\b/g).length, 2);          // defined once, shown from one place
+  assert.equal(source.match(/SESSION_MESSAGE\b/g).length, 2);         // defined once, shown from one place
 
   // Saving a day does not disturb the measurements, and the other way round.
   const sundays = el(app, "measurements-body").textContent;
@@ -2062,7 +2119,7 @@ test("the note about unreadable cells says where they can be corrected", async (
   const app = await boot({ editing: true });
   assert.equal(el(app, "issues").hidden, false);
   assert.equal(el(app, "issues-help").textContent,
-    "Correct these in Excel and save, or replace the value with Edit on that row. They are shown as unreadable, not guessed.");
+    "Replace the value with Edit on that row. They are shown as unreadable, not guessed.");
   // Every month that is drawn can be edited, so the note is the same everywhere.
   const old = await boot();
   assert.equal(el(old, "issues-help").textContent, el(app, "issues-help").textContent);
@@ -2496,7 +2553,7 @@ test("an unreachable backend or unusable data keeps the dashboard and is reporte
   app.server.down = true;
   await app.poll();
   assert.equal(app.notice.hidden, false);
-  assert.match(app.notice.textContent, /^Cannot reach the local backend/);
+  assert.match(app.notice.textContent, /^Raft cannot be reached right now\. Check your internet connection\./);
   assert.match(app.notice.textContent, /Still showing the last data that loaded for October 2026\.$/);
   assert.equal(app.body.textContent, before);
   app.server.down = false;
@@ -2517,28 +2574,173 @@ test("an unreachable backend or unusable data keeps the dashboard and is reporte
   assert.doesNotMatch(trackerRow(app, "2026-10-01").textContent, /9,999/);
 });
 
-test("the status line says when Excel has unsaved changes, without treating it as an error", async () => {
+test("the status line says when the data was last saved, and picks up saves from another device", async () => {
   const app = await boot();
-  const status = app.document.getElementById("workbook-status");
+  const status = app.document.getElementById("save-status");
   const before = app.body.textContent;
-  assert.match(status.textContent, /^Workbook last saved .+\.$/);
-  assert.doesNotMatch(status.textContent, /Excel/);
+  assert.match(status.textContent, /^Last saved .+\.$/);
+  assert.doesNotMatch(status.textContent, /Excel|workbook/i);
 
+  // Flags only a workbook ever set change nothing.
   app.server.status.locked = true;
-  await app.poll();
-  assert.match(status.textContent, /It is open in Excel; changes appear here each time you save\.$/);
-
   app.server.status.unsaved_changes = true;
   app.calls.length = 0;
   await app.poll();
-  assert.match(status.textContent, /Excel has unsaved changes; showing the last saved data\.$/);
+  assert.match(status.textContent, /^Last saved .+\.$/);
   assert.deepEqual(app.calls, ["/api/status"]);      // nothing new to fetch
   assert.equal(app.notice.hidden, true);             // not an error
   assert.equal(app.body.textContent, before);        // the dashboard is unchanged
 
-  app.server.status.unsaved_changes = false;
+  // Something saved on another device: the month and its analytics are read once.
+  app.calls.length = 0;
+  await app.save();
+  assert.deepEqual([...app.calls].sort(),
+    ["/api/months", "/api/months/2026/10", "/api/months/2026/10/analytics", "/api/status"].sort());
+  assert.match(status.textContent, /^Last saved .+\.$/);
+});
+
+// ---------------------------------------------------------------- signing in
+
+const authError = (app, name) => el(app, `auth-${name}-error`);
+
+async function submitAuth(app, values) {
+  for (const [name, value] of Object.entries(values)) el(app, `auth-${name}`).value = value;
+  el(app, "auth-form").fire("submit");
+  await settle();
+}
+
+test("signed out, the page shows only the sign-in form and asks for nothing else", async () => {
+  const app = await boot({ signedOut: true });
+  assert.equal(el(app, "auth-view").hidden, false);
+  assert.equal(el(app, "app-main").hidden, true);
+  assert.equal(el(app, "account").hidden, true);
+  assert.equal(el(app, "auth-title").textContent, "Sign in");
+  assert.equal(el(app, "auth-name-field").hidden, true);
+  assert.equal(el(app, "auth-confirm-field").hidden, true);
+  assert.equal(el(app, "auth-password").attributes.autocomplete, "current-password");
+  assert.deepEqual(app.calls, ["/api/status"]);
+  assert.equal(app.notice.hidden, true);             // being signed out is not an error
+  assert.equal(el(app, "save-status").textContent, "");
+  app.calls.length = 0;
   await app.poll();
-  assert.match(status.textContent, /It is open in Excel/);
+  assert.deepEqual(app.calls, []);                   // no polling while signed out
+});
+
+test("sign in: checked first, refused in the server's words, then the months appear", async () => {
+  const app = await boot({ signedOut: true });
+  await submitAuth(app, { email: "not an email", password: "" });
+  assert.equal(authError(app, "email").hidden, false);
+  assert.equal(authError(app, "password").textContent, "Enter your password.");
+  assert.equal(el(app, "auth-email").attributes["aria-invalid"], "true");
+  assert.equal(app.requests.length, 0);              // nothing was sent
+
+  await submitAuth(app, { email: app.server.status.user.email, password: "wrong-password" });
+  assert.equal(app.requests.length, 1);
+  assert.equal(app.requests[0].url, "/api/auth/login");
+  assert.equal(authError(app, "email").hidden, true);
+  assert.equal(el(app, "auth-error").hidden, false);
+  assert.equal(el(app, "auth-error").textContent, "That email and password do not match an account.");
+  assert.equal(el(app, "auth-view").hidden, false);
+  assert.equal(el(app, "auth-submit").disabled, false);
+  assert.equal(el(app, "auth-submit").textContent, "Sign in");
+
+  await submitAuth(app, { password: app.server.password });
+  assert.equal(el(app, "auth-view").hidden, true);
+  assert.equal(el(app, "app-main").hidden, false);
+  assert.equal(el(app, "account").hidden, false);
+  assert.equal(el(app, "account-name").textContent, app.server.status.user.display_name);
+  assert.equal(el(app, "auth-password").value, "");  // not kept on the page
+  assert.equal(app.title.textContent, "October 2026");
+  assert.ok(app.tracker.children.length > 0);
+  assert.match(el(app, "save-status").textContent, /^Last saved /);
+});
+
+test("creating an account: the extra fields, their checks, and email confirmation", async () => {
+  const app = await boot({ signedOut: true });
+  el(app, "auth-switch").fire("click");
+  assert.equal(el(app, "auth-title").textContent, "Create your account");
+  assert.equal(el(app, "auth-name-field").hidden, false);
+  assert.equal(el(app, "auth-confirm-field").hidden, false);
+  assert.equal(el(app, "auth-password").attributes.autocomplete, "new-password");
+  assert.equal(el(app, "auth-submit").textContent, "Create account");
+  assert.equal(el(app, "auth-switch").textContent, "Sign in");
+
+  await submitAuth(app, { name: "  ", email: "a@example.test", password: "short", confirm: "other" });
+  assert.equal(authError(app, "name").textContent, "Enter the name Raft should show.");
+  assert.equal(authError(app, "password").textContent, "Use at least 8 characters.");
+  assert.equal(authError(app, "confirm").textContent, "The two passwords do not match.");
+  assert.equal(app.requests.length, 0);
+
+  // The server has the last word, field by field.
+  const answers = [
+    { status: 400, body: { error: { code: "invalid_request", message: "Some fields are not valid.",
+      fields: { email: "Enter a valid email address." } } } },
+    { status: 409, body: { error: { code: "account_exists", message: "An account with that email already exists. Sign in instead." } } },
+    { status: 201, body: { confirmation_required: true, message: "Check your email and open the link we sent, then sign in." } },
+  ];
+  app.server.registerAnswers = answers;
+  await submitAuth(app, { name: "Asha", email: "a@example.test", password: "long-enough-1", confirm: "long-enough-1" });
+  assert.equal(authError(app, "email").textContent, "Enter a valid email address.");
+  await submitAuth(app, {});
+  assert.equal(el(app, "auth-error").textContent, "An account with that email already exists. Sign in instead.");
+  await submitAuth(app, {});
+  assert.equal(el(app, "auth-title").textContent, "Sign in");          // back to signing in
+  assert.equal(el(app, "auth-info").hidden, false);
+  assert.equal(el(app, "auth-info").textContent, "Check your email and open the link we sent, then sign in.");
+  assert.equal(el(app, "auth-email").value, "a@example.test");
+  assert.equal(el(app, "auth-password").value, "");
+  assert.equal(el(app, "app-main").hidden, true);
+  assert.equal(app.requests.length, 3);
+  assert.ok(app.requests.every((request) => request.url === "/api/auth/register"));
+  assert.deepEqual(JSON.parse(app.requests[0].body), { email: "a@example.test", password: "long-enough-1",
+    confirm: "long-enough-1", display_name: "Asha" });
+});
+
+test("sign out puts the data away; if Raft cannot be reached it stays signed in and says so", async () => {
+  const app = await boot();
+  assert.equal(el(app, "account").hidden, false);
+  app.server.down = true;
+  el(app, "sign-out").fire("click");
+  await settle();
+  assert.equal(el(app, "app-main").hidden, false);
+  assert.match(app.notice.textContent, /^Could not sign out\. Raft cannot be reached right now/);
+  app.server.down = false;
+
+  el(app, "sign-out").fire("click");
+  await settle();
+  assert.equal(app.requests.at(-1).url, "/api/auth/logout");
+  assert.equal(el(app, "auth-view").hidden, false);
+  assert.equal(el(app, "app-main").hidden, true);
+  assert.equal(el(app, "account").hidden, true);
+  assert.equal(el(app, "account-name").textContent, "");
+  assert.equal(app.tracker.children.length, 0);
+  assert.equal(app.body.children.length, 0);
+  assert.equal(el(app, "month-select").children.length, 0);
+  assert.equal(app.title.textContent, "");
+  app.calls.length = 0;
+  await app.poll();
+  assert.deepEqual(app.calls, []);
+});
+
+test("the desktop edition's one user is named, with no Sign out", async () => {
+  const app = await boot();
+  assert.equal(el(app, "sign-out").hidden, false);
+  app.server.status = { ...app.server.status, user: { email: "", display_name: "This computer", local: true } };
+  await app.poll();
+  assert.equal(el(app, "account-name").textContent, "This computer");
+  assert.equal(el(app, "sign-out").hidden, true);
+  assert.equal(el(app, "account").hidden, false);
+});
+
+test("every request carries the user's own date", async () => {
+  const app = await boot();
+  openDay(app, "2026-10-02");
+  type(app, { protein_g: "100" });
+  await pressSave(app);
+  const today = app.requests[0].headers["X-Raft-Today"];
+  assert.match(today, /^\d{4}-\d{2}-\d{2}$/);
+  const now = new Date();
+  assert.equal(today, `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`);
 });
 
 test("the daily tracker flags today, in the month that holds it", async () => {
@@ -2819,7 +3021,7 @@ test("Delete Month asks first, names the month, and deletes only on the second p
   assert.equal(app.requests.length, 0);
   assert.ok(deleteOpen(app));
   assert.equal(el(app, "delete-confirm").hidden, false);
-  assert.match(el(app, "delete-confirm").textContent, /^Delete November 2026\? Its sheet is removed from Fitness_Tracker\.xlsx/);
+  assert.match(el(app, "delete-confirm").textContent, /^Delete November 2026\? It is removed from your account with everything entered in it/);
   assert.match(el(app, "delete-confirm").textContent, /This cannot be undone\.$/);
   assert.equal(el(app, "delete-submit").textContent, "Delete November 2026");
   assert.equal(el(app, "delete-select").disabled, true);        // the month cannot change under the question
@@ -2885,7 +3087,7 @@ test("the only month cannot be deleted, and the dialog says why", async () => {
   assert.equal(el(app, "delete-submit").disabled, true);
   assert.equal(el(app, "delete-select").disabled, true);
   assert.equal(el(app, "delete-hint").textContent,
-    "This is the only month in the workbook, so it cannot be deleted. Add another month first.");
+    "This is your only month, so it cannot be deleted. Add another month first.");
   await pressDelete(app);                                       // even if the form is sent some other way
   await pressDelete(app);
   assert.equal(app.requests.length, 0);

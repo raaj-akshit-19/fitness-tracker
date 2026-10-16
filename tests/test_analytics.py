@@ -19,7 +19,7 @@ from openpyxl import Workbook, load_workbook
 from backend import analytics as an
 from backend import store as st
 from backend import workbook as wbk
-from backend.app import create_app
+from tests.support import workbook_app
 from tests.test_migration import sha256
 
 TODAY = date(2026, 10, 20)          # a Tuesday. 1 Oct 2026 is a Thursday.
@@ -575,7 +575,7 @@ class ApiTests(unittest.TestCase):
             november[ref] = value
         wb.save(self.path)
         self.before = sha256(self.path)
-        self.client = create_app(self.path, today=lambda: TODAY).test_client()
+        self.client = workbook_app(self.path, today=lambda: TODAY).test_client()
 
     def analytics(self, month_number):
         response = self.client.get(f"/api/months/2026/{month_number}/analytics")
@@ -681,10 +681,15 @@ class ApiTests(unittest.TestCase):
                        for rule in self.client.application.url_map.iter_rules() if rule.rule.startswith("/api/"))
         self.assertEqual(rules, [
             "DELETE /api/months/<int:year>/<int:month>",
+            "GET /api/auth/session",
+            "GET /api/health",
             "GET /api/months",
             "GET /api/months/<int:year>/<int:month>",
             "GET /api/months/<int:year>/<int:month>/analytics",
             "GET /api/status",
+            "POST /api/auth/login",
+            "POST /api/auth/logout",
+            "POST /api/auth/register",
             "POST /api/months",
             "PUT /api/months/<int:year>/<int:month>/days/<int:day>",
             "PUT /api/months/<int:year>/<int:month>/measurements/<int:day>",

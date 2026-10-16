@@ -241,7 +241,7 @@ main {
   padding-top: 14px;
 }
 
-.workbook-status {
+.save-status {
   min-height: 19px;
   margin: 1px 0 0;
   color: var(--muted);
@@ -528,6 +528,117 @@ select:focus-visible {
 .empty {
   margin-top: 18px;
   color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- account */
+
+/* Who is signed in, and the way out: a quiet line under the status. */
+.account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 6px;
+}
+
+/* Fields only creating an account needs are hidden when signing in. */
+.account[hidden],
+.auth-card .field[hidden] {
+  display: none;
+}
+
+.account-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account button {
+  flex: none;
+}
+
+/* Signing in or creating an account: one card, in the middle on a wide
+   screen and filling the width on a phone. */
+.auth-view {
+  max-width: 420px;
+  margin: 28px auto 72px;
+  padding: 0 var(--gutter);
+}
+
+/* Drawn as a card (see .card), with more room inside. */
+.auth-view .auth-card {
+  padding: 24px 20px 18px;
+}
+
+.auth-card h2 {
+  font-size: 24px;
+}
+
+.auth-lead {
+  margin: 6px 0 20px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.auth-card input {
+  width: 100%;
+  min-width: 0;
+}
+
+.auth-card input[aria-invalid="true"] {
+  border-color: var(--danger-line);
+}
+
+.auth-card .notice {
+  margin: 0 0 14px;
+}
+
+.auth-info {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  background: var(--accent-soft);
+  color: var(--text);
+  border: 1px solid var(--accent-muted);
+  border-left-width: 4px;
+  border-radius: var(--r-control);
+  overflow-wrap: anywhere;
+}
+
+.auth-submit {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.auth-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0 6px;
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* A button that reads as a link, still tall enough to tap. */
+button.link-button {
+  height: 44px;
+  padding: 0 4px;
+  background: none;
+  color: var(--accent);
+  font-weight: 600;
+  border: 0;
+  box-shadow: none;
+}
+
+button.link-button:hover:not(:disabled) {
+  background: none;
+  color: var(--accent-strong);
+  text-decoration: underline;
 }
 
 /* ---------------------------------------------------------------- bar of links */
@@ -915,7 +1026,7 @@ td.unreadable {
   color: var(--danger);
 }
 
-/* A status: its mark, then the word the workbook holds. */
+/* A status: its mark, then the word that was entered. */
 td.status {
   font-weight: 600;
 }
@@ -2367,8 +2478,16 @@ dialog[open]::backdrop {
     padding-top: 18px;
   }
 
-  .workbook-status {
+  .save-status {
     margin: 0;
+  }
+
+  .account {
+    margin-top: 0;
+  }
+
+  .auth-view {
+    margin-top: 64px;
   }
 
   /* There is room for the month as a heading, with its controls beside it. */

@@ -1,7 +1,7 @@
 """Analytics for one month.
 
 Everything here is a pure function of one month's data, in the shape returned
-by TrackerStore.get_month, and of today's date. Nothing reads the workbook,
+by the stores' get_month, and of today's date. Nothing reads the workbook,
 another month, or the clock, and nothing is changed, so the same inputs always
 give the same result.
 
@@ -32,7 +32,7 @@ Rules:
 from datetime import date
 
 from backend import validation
-from backend.workbook import format_cardio
+from backend.months import format_cardio
 
 MEASUREMENTS = ("weight_kg", "waist_cm", "chest_cm", "bicep_cm", "thigh_cm", "forearm_cm")
 

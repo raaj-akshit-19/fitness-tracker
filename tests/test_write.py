@@ -19,7 +19,7 @@ from openpyxl import Workbook, load_workbook
 
 from backend import store as st
 from backend import workbook as wbk
-from backend.app import create_app
+from tests.support import workbook_app
 from tests.earlier_layout import add_month
 from tests.test_migration import grid, layout, sha256
 
@@ -535,7 +535,7 @@ class SafetyTests(Case):
 class ApiTests(Case):
     def setUp(self):
         super().setUp()
-        self.client = create_app(self.path, today=lambda: TODAY).test_client()
+        self.client = workbook_app(self.path, today=lambda: TODAY).test_client()
 
     def put(self, url, body, **kwargs):
         return self.client.put(url, json=body, **kwargs)

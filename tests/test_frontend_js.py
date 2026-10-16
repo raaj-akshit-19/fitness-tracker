@@ -22,7 +22,7 @@ from unittest import mock
 from openpyxl import Workbook, load_workbook
 
 from backend import workbook as wbk
-from backend.app import create_app
+from tests.support import cloud_app, sign_in, workbook_app
 from backend.store import TrackerStore
 from tests.earlier_layout import add_month
 
@@ -68,7 +68,7 @@ def build_scenario(path):
 
 def collect_fixtures(path):
     """Backend responses for the scenario."""
-    client = create_app(path, today=lambda: TODAY).test_client()
+    client = workbook_app(path, today=lambda: TODAY).test_client()
     get = lambda url: client.get(url).get_json()
     return {
         "months": get("/api/months"),
@@ -117,9 +117,22 @@ def build_other_layout(path):
     wb.save(path)
 
 
+def cloud_replies(url, body):
+    """The Supabase-backed app's answers to an edit: signed out, and with Supabase down."""
+    app, project = cloud_app(today=lambda: TODAY)
+    signed_out = app.test_client().put(url, json=body)
+    project.new_user("a@example.test", "correct-horse-1", "A")
+    client = app.test_client()
+    sign_in(client, project, "a@example.test", "correct-horse-1")
+    project.down = True
+    unavailable = client.put(url, json=body)
+    return {name: {"status": response.status_code, "body": response.get_json()}
+            for name, response in (("signed_out", signed_out), ("unavailable", unavailable))}
+
+
 def collect_editing_fixtures(path, other_path):
     """Backend responses for the editing scenario, including what it says to each kind of edit."""
-    client = create_app(path, today=lambda: TODAY).test_client()
+    client = workbook_app(path, today=lambda: TODAY).test_client()
     get = lambda url: client.get(url).get_json()
 
     def put(url, body, app=client):
@@ -134,7 +147,7 @@ def collect_editing_fixtures(path, other_path):
                  for number in (10, 11)},
         "analytics": {"status": client.get("/api/months/2026/10/analytics").status_code},
     }
-    other_client = create_app(other_path, today=lambda: TODAY).test_client()
+    other_client = workbook_app(other_path, today=lambda: TODAY).test_client()
     with mock.patch("builtins.open", side_effect=PermissionError("locked")):
         locked = put("/api/months/2026/10/days/2", SAMPLE_EDIT)
     fixtures["replies"] = {
@@ -154,6 +167,10 @@ def collect_editing_fixtures(path, other_path):
         "locked": locked,
         "other_layout": put("/api/months/2026/10/measurements/4", {"weight_kg": 70}, other_client),
     }}
+    # What the deployed app (over Supabase) says when the session has ended, and
+    # when Supabase cannot be reached.
+    fixtures["replies"].update(cloud_replies("/api/months/2026/10/days/2", SAMPLE_EDIT))
+    fixtures["measure"]["replies"].update(cloud_replies("/api/months/2026/10/measurements/4", SAMPLE_MEASUREMENTS))
     # What the backend says about a month it cannot read, for the page's handling of it.
     fixtures["other_layout_month"] = {
         "status": other_client.get("/api/months/2026/10").status_code,
@@ -245,11 +262,12 @@ class ScenarioTests(unittest.TestCase):
         replies = self.editing["measure"]["replies"]
         self.assertEqual({name: reply["status"] for name, reply in replies.items()},
                          {"invalid": 400, "not_sunday": 400, "future": 400, "missing": 404, "locked": 423,
-                          "other_layout": 500})
+                          "other_layout": 500, "signed_out": 401, "unavailable": 503})
         self.assertEqual({name: reply["body"]["error"]["code"] for name, reply in replies.items()},
                          {"invalid": "invalid_request", "not_sunday": "invalid_request", "future": "invalid_request",
                           "missing": "month_not_found", "locked": "workbook_locked",
-                          "other_layout": "workbook_format"})
+                          "other_layout": "workbook_format", "signed_out": "not_signed_in",
+                          "unavailable": "service_unavailable"})
         self.assertEqual(sorted(replies["invalid"]["body"]["error"]["fields"]), ["waist_cm", "weight_kg"])
         self.assertEqual(list(replies["not_sunday"]["body"]["error"]["fields"]), ["day"])
         self.assertEqual(list(replies["future"]["body"]["error"]["fields"]), ["day"])
@@ -264,10 +282,12 @@ class ScenarioTests(unittest.TestCase):
     def test_day_replies(self):
         replies = self.editing["replies"]
         self.assertEqual({name: reply["status"] for name, reply in replies.items()},
-                         {"invalid": 400, "future": 400, "missing": 404, "locked": 423, "other_layout": 500})
+                         {"invalid": 400, "future": 400, "missing": 404, "locked": 423, "other_layout": 500,
+                          "signed_out": 401, "unavailable": 503})
         self.assertEqual({name: reply["body"]["error"]["code"] for name, reply in replies.items()},
                          {"invalid": "invalid_request", "future": "invalid_request", "missing": "month_not_found",
-                          "locked": "workbook_locked", "other_layout": "workbook_format"})
+                          "locked": "workbook_locked", "other_layout": "workbook_format",
+                          "signed_out": "not_signed_in", "unavailable": "service_unavailable"})
         self.assertEqual(sorted(replies["invalid"]["body"]["error"]["fields"]), ["calories_kcal", "cardio", "exercise"])
         self.assertEqual(list(replies["future"]["body"]["error"]["fields"]), ["day"])
         edit = self.editing["edit"]["reply"]

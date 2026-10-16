@@ -12,11 +12,52 @@
   <header class="top">
     <div class="top-inner">
       <h1>Raft</h1>
-      <p id="workbook-status" class="workbook-status" role="status"></p>
+      <p id="save-status" class="save-status" role="status"></p>
+      <div id="account" class="account" hidden>
+        <span id="account-name" class="account-name"></span>
+        <button id="sign-out" type="button" class="secondary small">Sign out</button>
+      </div>
     </div>
   </header>
 
-  <main>
+  <section id="auth-view" class="auth-view" aria-labelledby="auth-title" hidden>
+    <form id="auth-form" class="auth-card card" novalidate>
+      <h2 id="auth-title">Sign in</h2>
+      <p id="auth-lead" class="auth-lead">Sign in to see your months.</p>
+      <div id="auth-name-field" class="field" hidden>
+        <label for="auth-name">Display name</label>
+        <input id="auth-name" type="text" autocomplete="nickname" maxlength="60" aria-describedby="auth-name-error">
+        <p id="auth-name-error" class="field-error" hidden></p>
+      </div>
+      <div class="field">
+        <label for="auth-email">Email</label>
+        <input id="auth-email" type="email" autocomplete="email" inputmode="email" maxlength="254" required
+               aria-describedby="auth-email-error">
+        <p id="auth-email-error" class="field-error" hidden></p>
+      </div>
+      <div class="field">
+        <label for="auth-password">Password</label>
+        <input id="auth-password" type="password" autocomplete="current-password" maxlength="72" required
+               aria-describedby="auth-password-error">
+        <p id="auth-password-error" class="field-error" hidden></p>
+      </div>
+      <div id="auth-confirm-field" class="field" hidden>
+        <label for="auth-confirm">Confirm password</label>
+        <input id="auth-confirm" type="password" autocomplete="new-password" maxlength="72"
+               aria-describedby="auth-confirm-error">
+        <p id="auth-confirm-error" class="field-error" hidden></p>
+      </div>
+      <p id="auth-error" class="notice" role="alert" hidden></p>
+      <p id="auth-info" class="auth-info" role="status" hidden></p>
+      <button id="auth-submit" type="submit" class="auth-submit">Sign in</button>
+      <p class="auth-switch">
+        <span id="auth-switch-text">New to Raft?</span>
+        <button id="auth-switch" type="button" class="link-button">Create an account</button>
+      </p>
+    </form>
+  </section>
+
+  <main id="app-main" hidden>
     <div class="toolbar">
       <h2 id="month-title"></h2>
       <label for="month-select">Select Month</label>
@@ -28,7 +69,7 @@
     <p id="notice" class="notice" role="alert" hidden></p>
 
     <p id="empty" class="empty" hidden>
-      The workbook has no monthly sheets yet. Use Add New Month, the + button, to create one.
+      You have no months yet. Use Add New Month, the + button, to create one.
     </p>
 
     <div id="month-view" hidden>
@@ -50,9 +91,9 @@
       <section id="section-tracker" class="block" data-section="tracker" aria-labelledby="heading-tracker">
         <h3 id="heading-tracker">Daily Tracker</h3>
         <p class="desc">
-          What the workbook holds for each day. Use Edit to change a day; the
-          change is written to Fitness_Tracker.xlsx when you press Save. Days
-          in the future cannot be edited yet.
+          What you have entered for each day. Use Edit to change a day; the
+          change is saved to your account when you press Save. Days in the
+          future cannot be edited yet.
         </p>
         <p id="saved-note" class="saved-note" role="status" hidden></p>
         <div class="days-nav">
@@ -89,10 +130,9 @@
       <section id="section-sunday" class="block" data-section="sunday" aria-labelledby="heading-sunday">
         <h3 id="heading-sunday">Sunday Measurements</h3>
         <p class="desc">
-          One row for each Sunday in this month, as entered in the workbook. Use
-          Edit to change a Sunday's measurements; the change is written to
-          Fitness_Tracker.xlsx when you press Save. Sundays in the future
-          cannot be edited yet.
+          One row for each Sunday in this month. Use Edit to change a Sunday's
+          measurements; the change is saved to your account when you press
+          Save. Sundays in the future cannot be edited yet.
         </p>
         <p id="measure-saved-note" class="saved-note" role="status" hidden></p>
         <div class="table-scroll">

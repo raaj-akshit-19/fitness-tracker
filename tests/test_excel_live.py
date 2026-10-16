@@ -37,7 +37,7 @@ from backend import launch
 from backend import store as st
 from backend import workbook as wbk
 from backend.analytics import month_analytics
-from backend.app import create_app
+from tests.support import workbook_app
 
 PROJECT = Path(__file__).resolve().parent.parent
 EXE = PROJECT / "release" / "Fitness Tracker" / "Fitness Tracker.exe"
@@ -702,7 +702,7 @@ class StatusAndApiTests(LogicCase):
 
     def test_api_answers_normally_while_excel_holds_a_saved_workbook(self):
         self.excel.open(self.in_excel({"B2": "Completed", "D2": "15:30", "G2": 1250, "K2": 72.5}))
-        client = create_app(self.path, today=lambda: datetime.date(2026, 10, 3)).test_client()
+        client = workbook_app(self.path, today=lambda: datetime.date(2026, 10, 3)).test_client()
         with locked_file(), self.held():
             self.assertEqual(client.get("/api/status").get_json()["locked"], True)
             self.assertEqual(client.get("/api/months").status_code, 200)
@@ -720,7 +720,7 @@ class StatusAndApiTests(LogicCase):
 
     def test_api_explains_unsaved_changes_when_there_is_nothing_to_show(self):
         self.excel.open(self.in_excel({"G2": 999}, saved=False))
-        client = create_app(self.path).test_client()
+        client = workbook_app(self.path).test_client()
         with locked_file(), self.held():
             response = client.get("/api/months/2026/10")
             status = client.get("/api/status").get_json()

@@ -20,7 +20,7 @@ from openpyxl import Workbook, load_workbook
 from backend import migrate
 from backend import store as st
 from backend import workbook as wbk
-from backend.app import create_app
+from tests.support import workbook_app
 from tests.earlier_layout import add_month
 
 EARLIER, CURRENT = True, False       # how a month in a test workbook is laid out
@@ -527,7 +527,7 @@ class BadCellTests(Case):
 class OnlyWhenAskedTests(Case):
     def test_the_tracker_itself_never_converts_and_never_reads_the_earlier_layout(self):
         before = self.october()
-        client = create_app(self.path).test_client()
+        client = workbook_app(self.path).test_client()
         for url in ("/", "/api/status", "/api/months"):
             response = client.get(url)
             self.assertEqual(response.status_code, 200, url)

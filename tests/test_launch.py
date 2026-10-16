@@ -29,14 +29,14 @@ from werkzeug.serving import make_server
 
 from backend import launch
 from backend import workbook as wbk
-from backend.app import create_app
+from backend.desktop import create_desktop_app
 
 PROJECT = Path(__file__).resolve().parent.parent
 BAT = PROJECT / "Start Fitness Tracker.bat"
 WINDOWS = os.name == "nt"
-SOURCE_DIRS = ["backend", "frontend", "tests", "windows_build"]
-SOURCE_FILES = ["Start Fitness Tracker.bat", "README.md", "requirements.txt",
-                "requirements-build.txt", ".gitignore"]
+SOURCE_DIRS = ["backend", "frontend", "tests", "windows_build", "supabase"]
+SOURCE_FILES = ["Start Fitness Tracker.bat", "README.md", "requirements.txt", "requirements-desktop.txt",
+                "requirements-build.txt", ".gitignore", ".env.example", "wsgi.py", "render.yaml"]
 RELEASE = PROJECT / "release" / "Fitness Tracker"
 
 
@@ -97,7 +97,7 @@ class TempCase(unittest.TestCase):
 
     def serve(self, port):
         """Run the tracker in this process on the given port until the test ends."""
-        server = make_server(launch.HOST, port, create_app(self.workbook), threaded=True)
+        server = make_server(launch.HOST, port, create_desktop_app(self.workbook), threaded=True)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.addCleanup(thread.join, 5)
@@ -142,7 +142,7 @@ class StartupCheckTests(TempCase):
         self.assertIn("Flask", message)
         self.assertNotIn("openpyxl,", message)
         self.assertIn("-m pip install -r", message)
-        self.assertIn("requirements.txt", message)
+        self.assertIn("requirements-desktop.txt", message)
 
     def test_only_listens_on_this_computer(self):
         self.assertEqual(launch.HOST, "127.0.0.1")
@@ -248,7 +248,9 @@ class ReadinessTests(TempCase):
 
 
 class NoInternetTests(TempCase):
-    """Nothing the backend or the launcher does may leave this computer."""
+    """Nothing the desktop edition (the launcher and the app over the workbook) does
+    may leave this computer. The web edition's one way out, to its Supabase project,
+    is checked in test_cloud.py."""
 
     def test_backend_and_launcher_only_connect_to_this_computer(self):
         real_connect = socket.socket.connect
@@ -283,10 +285,15 @@ class NoInternetTests(TempCase):
         self.assertEqual(set(seen), {"127.0.0.1"})
 
     def test_requirements_are_only_local_libraries(self):
-        lines = (PROJECT / "requirements.txt").read_text(encoding="utf-8").splitlines()
-        names = sorted(line.split("==")[0].strip().lower() for line in lines if line.strip())
-        # Flask serves the page, openpyxl reads the file, pywin32 talks to Excel on this computer.
-        self.assertEqual(names, ["flask", "openpyxl", "pywin32"])
+        def names(file):
+            lines = (PROJECT / file).read_text(encoding="utf-8").splitlines()
+            return sorted(line.split("==")[0].strip().lower() for line in lines if line.strip())
+        # The web edition: Flask serves the page and the API, gunicorn runs it on the host.
+        # It talks to Supabase with the standard library alone.
+        self.assertEqual(names("requirements.txt"), ["flask", "gunicorn"])
+        # The desktop edition adds the workbook's libraries: openpyxl reads the file,
+        # pywin32 talks to Excel on this computer.
+        self.assertEqual(names("requirements-desktop.txt"), ["-r requirements.txt", "openpyxl", "pywin32"])
 
     def test_backend_imports_no_network_client(self):
         for path in (PROJECT / "backend").glob("*.py"):
@@ -311,7 +318,7 @@ class ProjectFileTests(unittest.TestCase):
         self.assertNotIn("0.0.0.0", text)
         self.assertNotIn("http", text.lower())
         for word in ("create_workbook", "pip install -", "curl", "powershell", "del ", "rmdir"):
-            self.assertNotIn(word, text.lower().replace("-m pip install -r requirements.txt", ""))
+            self.assertNotIn(word, text.lower().replace("-m pip install -r requirements-desktop.txt", ""))
 
     def test_no_machine_specific_paths_in_the_project(self):
         # Built in pieces so this file does not contain what it looks for.
@@ -339,11 +346,13 @@ class ProjectFileTests(unittest.TestCase):
             ".gitignore", ".gitattributes", ".venv", "backend", "frontend", "tests", "Fitness_Tracker.xlsx",
             "README.md", "requirements.txt", "Start Fitness Tracker.bat",
             "windows_build", "requirements-build.txt", "Fitness_Tracker_Template.xlsx",
+            "requirements-desktop.txt", "supabase", "wsgi.py", "render.yaml", ".env.example",
         }
         # The built application, once made, lives in release/. personal/ is a
-        # private folder that is never committed.
-        self.assertEqual({p.name for p in PROJECT.iterdir()} - {".git", "release", "personal"},
-                         allowed_root)
+        # private folder and .env holds this computer's settings; neither is ever
+        # committed.
+        local_only = {".git", "release", "personal", ".env"}
+        self.assertEqual({p.name for p in PROJECT.iterdir()} - local_only, allowed_root)
         workbooks = {p for p in PROJECT.rglob("*.xls*")
                      if ".venv" not in p.parts and "personal" not in p.parts
                      and not p.name.startswith("~$")}
@@ -359,10 +368,27 @@ class ProjectFileTests(unittest.TestCase):
                              path.name)
 
     def test_no_credentials(self):
-        pattern = re.compile(r"(api[_-]?key|secret|password|token)\s*[=:]\s*[\"'][^\"']+[\"']", re.I)
+        pattern = re.compile(r"(api[_-]?key|secret|password|token)\s*[=:]\s*[\"']([^\"']+)[\"']", re.I)
+        # The made-up passwords and tokens of the tests' pretend accounts, and the
+        # signing secret of the throwaway local stack in supabase/local/ (it runs
+        # only on this computer, for tests). None of them opens anything real;
+        # any other value is refused.
+        known_fakes = {"correct-horse-1", "wrong-password", "short", "long-enough-1", "stack-test-password-1",
+                       "test-access", "test-refresh", "local-jwt-secret-for-tests-only-0123456789abcdef"}
+        # A signed token, which is what every Supabase key is.
+        signed_token = re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}")
+        # Built in pieces so this file does not contain what it looks for.
+        service_role = r"(?i)service[_-]?role[_-]?key\s*=|" + "SUPABASE_" + "SERVICE_ROLE_KEY"
         for path in source_files():
             text = path.read_text(encoding="utf-8", errors="replace")
-            self.assertIsNone(pattern.search(text), path.name)
+            name = path.relative_to(PROJECT).as_posix()
+            for match in pattern.finditer(text):
+                self.assertIn(match.group(2), known_fakes, f"{name}: {match.group(0)}")
+            self.assertIsNone(signed_token.search(text), name)
+            # The service-role key, which gets past row level security, is never read
+            # or configured anywhere: not in code, page files, settings or the host's recipe.
+            if path.suffix in (".py", ".js", ".html", ".css", ".yaml", ".yml", ".sql", ".conf") or path.name == ".env.example":
+                self.assertNotRegex(text, service_role, name)
 
 
 @unittest.skipUnless(WINDOWS, "the launcher is a Windows batch file")
@@ -499,7 +525,8 @@ class LauncherRunTests(unittest.TestCase):
         moved = self.tmp / "Moved Tracker (copy 2) & more"
         moved.mkdir()
         shutil.copy(BAT, moved)
-        shutil.copy(PROJECT / "requirements.txt", moved)
+        for name in ("requirements.txt", "requirements-desktop.txt"):
+            shutil.copy(PROJECT / name, moved)
         for folder in ("backend", "frontend"):
             shutil.copytree(PROJECT / folder, moved / folder,
                             ignore=shutil.ignore_patterns("__pycache__"))

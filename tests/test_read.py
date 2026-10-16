@@ -18,7 +18,7 @@ from openpyxl import Workbook, load_workbook
 from backend import excel_live as xl
 from backend import store as st
 from backend import workbook as wbk
-from backend.app import create_app
+from tests.support import workbook_app
 from tests.earlier_layout import add_month
 
 DAY_KEYS = {"date", "exercise", "junk_food", "cardio_display", "cardio_seconds",
@@ -240,7 +240,7 @@ class ApiTests(Case):
     def test_a_month_is_served_with_its_analytics(self):
         self.workbook([(2026, 10), (2026, 11)])
         self.write("November 2026", {"B2": "Completed", "E2": 2200})
-        client = create_app(self.path, today=lambda: date(2026, 12, 1)).test_client()
+        client = workbook_app(self.path, today=lambda: date(2026, 12, 1)).test_client()
         self.assertEqual(client.get("/api/months").get_json(), [
             {"year": 2026, "month": 10, "label": "October 2026"},
             {"year": 2026, "month": 11, "label": "November 2026"}])
@@ -254,7 +254,7 @@ class ApiTests(Case):
 
     def test_nothing_in_what_is_served_names_a_version(self):
         self.workbook([(2026, 10)])
-        client = create_app(self.path).test_client()
+        client = workbook_app(self.path).test_client()
         for url in ("/api/status", "/api/months", "/api/months/2026/10", "/api/months/2026/10/analytics"):
             text = client.get(url).get_data(as_text=True).lower()
             for word in ("version", "upgrade", "migrat", "legacy", '"v1"', '"v2"'):
@@ -262,7 +262,7 @@ class ApiTests(Case):
 
     def test_there_is_no_way_to_convert_a_workbook_through_the_api(self):
         self.workbook([(2026, 10)], other=[(2026, 10)])
-        client = create_app(self.path).test_client()
+        client = workbook_app(self.path).test_client()
         before = self.digest()
         for method, url in (("post", "/api/upgrade"), ("put", "/api/upgrade"), ("post", "/api/migrate"),
                             ("post", "/api/convert")):

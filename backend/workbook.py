@@ -24,6 +24,7 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from backend import validation
+from backend.months import MONTH_NAMES, format_cardio, month_dates, month_label, month_sundays  # noqa: F401
 from backend.paths import APP_DIR
 
 # The workbook sits in the app's own folder: the project folder, or beside the
@@ -32,12 +33,6 @@ from backend.paths import APP_DIR
 WORKBOOK_PATH = Path(
     os.environ.get("FITNESS_TRACKER_WORKBOOK") or APP_DIR / "Fitness_Tracker.xlsx"
 )
-
-# English names are fixed here so sheet names never depend on the OS locale.
-MONTH_NAMES = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
-]
 
 # Daily table A to G, two blank columns, measurements J to P.
 DAILY_HEADERS = [
@@ -73,7 +68,7 @@ _SHEET_NAME_RE = re.compile(r"^(%s) (\d{4})$" % "|".join(MONTH_NAMES))
 
 
 def sheet_name(year, month):
-    return f"{MONTH_NAMES[month - 1]} {year}"
+    return month_label(year, month)
 
 
 def parse_sheet_name(name):
@@ -84,15 +79,6 @@ def parse_sheet_name(name):
     return int(match.group(2)), MONTH_NAMES.index(match.group(1)) + 1
 
 
-def month_dates(year, month):
-    days = calendar.monthrange(year, month)[1]
-    return [date(year, month, day) for day in range(1, days + 1)]
-
-
-def month_sundays(year, month):
-    return [d for d in month_dates(year, month) if d.weekday() == calendar.SUNDAY]
-
-
 def parse_cardio(value):
     """Convert a "min:sec" cardio entry to total seconds. Empty returns None."""
     if value is None or str(value).strip() == "":
@@ -101,11 +87,6 @@ def parse_cardio(value):
     if not match:
         raise ValueError(f"Cardio must be min:sec, for example 25:30. Got: {value!r}")
     return int(match.group(1)) * 60 + int(match.group(2))
-
-
-def format_cardio(total_seconds):
-    minutes, seconds = divmod(int(total_seconds), 60)
-    return f"{minutes}:{seconds:02d}"
 
 
 def list_months(wb):
